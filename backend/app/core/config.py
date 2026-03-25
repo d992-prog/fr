@@ -50,9 +50,7 @@ class Settings(BaseSettings):
     )
     proxy_fail_threshold: int = Field(default=3, alias="PROXY_FAIL_THRESHOLD")
     dead_proxy_retry_seconds: int = Field(default=300, alias="DEAD_PROXY_RETRY_SECONDS")
-    default_pending_message: str = (
-        "Ваша учетная запись ожидает одобрения администратора или активации промокодом."
-    )
+    default_pending_message: str = "Ваша учетная запись ожидает одобрения администратора или активации промокодом."
     login_rate_limit_attempts: int = Field(default=5, alias="LOGIN_RATE_LIMIT_ATTEMPTS")
     login_lock_minutes: int = Field(default=15, alias="LOGIN_LOCK_MINUTES")
     cors_origins: str = Field(default="*", alias="CORS_ORIGINS")

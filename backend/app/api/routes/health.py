@@ -3,12 +3,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
-from app.worker.scheduling import resolve_runtime_schedule
 from app.db.base import utcnow
 from app.db.models import Domain, User
 from app.db.session import get_db
 from app.core.config import get_settings
 from app.schemas.common import DomainHealthItem, HealthResponse, MonitoringHealthResponse
+from app.worker.scheduling import expected_runtime_interval
 
 router = APIRouter(tags=["health"])
 
@@ -37,10 +37,10 @@ async def monitoring_health(
         stale = False
         if domain.worker_heartbeat_at is not None:
             age = (now - domain.worker_heartbeat_at).total_seconds()
-            expected_interval = resolve_runtime_schedule(domain, domain.check_mode, now).interval
+            expected_interval = expected_runtime_interval(domain)
             allowed_age = max(
                 float(settings.worker_stall_threshold_seconds),
-                float(expected_interval) + 10.0,
+                float(expected_interval) + 15.0,
             )
             stale = age > allowed_age
         items.append(
