@@ -466,6 +466,20 @@ button.danger {
   width: auto;
 }
 
+.segmented-control {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.segmented-control.compact {
+  max-width: 100%;
+}
+
+.segmented-control button {
+  min-width: 130px;
+}
+
 .domain-tabs {
   margin-bottom: 18px;
 }
@@ -544,6 +558,11 @@ button.danger {
 .domain-settings {
   border-top: 1px solid rgba(79, 57, 29, 0.1);
   padding-top: 18px;
+}
+
+.domain-settings .card-head > div {
+  display: grid;
+  gap: 8px;
 }
 
 .inline-alert {
@@ -633,7 +652,8 @@ button.danger {
   .domain-card-head,
   .domain-title-row,
   .domain-summary-line,
-  .switch-line {
+  .switch-line,
+  .segmented-control {
     flex-direction: column;
     align-items: flex-start;
   }

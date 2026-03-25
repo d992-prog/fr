@@ -26,13 +26,13 @@ def evaluate_domain(
     confirmation_threshold: int,
 ) -> DecisionResult:
     possible_available = dns_signal == DnsSignal.NXDOMAIN and rdap_signal == RdapSignal.NOT_FOUND
-    normal_mode = "burst" if domain.manual_burst else "normal"
+    normal_mode = "normal"
 
     if domain.status == "available":
         if possible_available:
             return DecisionResult(
                 status="available",
-                check_mode="available-watch",
+                check_mode="available-watch" if domain.available_recheck_enabled else "available-stop",
                 confirmations=max(domain.available_confirmations, confirmation_threshold),
                 last_error=None,
                 should_alert=False,
@@ -43,7 +43,7 @@ def evaluate_domain(
         if dns_signal == DnsSignal.EXISTS and rdap_signal == RdapSignal.FOUND:
             return DecisionResult(
                 status="captured",
-                check_mode="normal",
+                check_mode="captured",
                 confirmations=0,
                 last_error=None,
                 should_alert=False,
@@ -51,6 +51,27 @@ def evaluate_domain(
                 log_type="info",
                 log_message="Domain is no longer available and appears captured again",
             )
+        if dns_signal == DnsSignal.ERROR or rdap_signal == RdapSignal.ERROR:
+            return DecisionResult(
+                status="available",
+                check_mode="available-watch" if domain.available_recheck_enabled else "available-stop",
+                confirmations=max(domain.available_confirmations, confirmation_threshold),
+                last_error="Temporary check failure while observing available domain",
+                should_alert=False,
+                should_log=False,
+                log_type="info",
+                log_message="Temporary check failure while observing available domain",
+            )
+        return DecisionResult(
+            status="available",
+            check_mode="available-watch" if domain.available_recheck_enabled else "available-stop",
+            confirmations=max(domain.available_confirmations, confirmation_threshold),
+            last_error=None,
+            should_alert=False,
+            should_log=False,
+            log_type="info",
+            log_message="Availability state preserved while waiting for next signal",
+        )
 
     if possible_available:
         confirmations = domain.available_confirmations + 1
@@ -70,7 +91,7 @@ def evaluate_domain(
             )
         return DecisionResult(
             status="checking",
-            check_mode="burst",
+            check_mode=normal_mode,
             confirmations=confirmations,
             last_error=None,
             should_alert=False,

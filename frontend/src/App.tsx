@@ -76,10 +76,10 @@ const STATUS_CLASS: Record<string, string> = {
   info: "status checking",
   "pattern-fast": "status checking",
   "pattern-slow": "status inactive",
+  "capture-watch": "status checking",
   "available-watch": "status available",
   "available-stop": "status inactive",
   normal: "status checking",
-  burst: "status checking",
   continuous: "status checking",
   pattern: "status inactive",
 };
@@ -150,11 +150,12 @@ function schedulerModeLabel(mode: string, language: Language) {
 function runtimeModeLabel(mode: string, language: Language) {
   const map: Record<string, { ru: string; en: string }> = {
     normal: { ru: "Обычный цикл", en: "Normal cycle" },
-    burst: { ru: "Burst / ускоренный цикл", en: "Burst / accelerated cycle" },
     "pattern-slow": { ru: "Вне окна дропа", en: "Outside drop window" },
     "pattern-fast": { ru: "Внутри окна дропа", en: "Inside drop window" },
+    "capture-watch": { ru: "Быстрое наблюдение после освобождения", en: "Fast watch after release" },
     "available-watch": { ru: "Медленное наблюдение после освобождения", en: "Slow post-release watch" },
     "available-stop": { ru: "Остановлен после подтверждения доступности", en: "Stopped after availability" },
+    captured: { ru: "Домен уже перехвачен", en: "Already captured" },
   };
   const label = map[mode];
   return label ? (language === "ru" ? label.ru : label.en) : mode;
@@ -231,6 +232,15 @@ function payloadFromDraft(draft: DomainDraft): DomainSettingsPayload {
   };
 }
 
+function hasUnsavedChanges(domain: Domain, draft: DomainDraft) {
+  const current = domainDraftFromDomain(domain);
+  return JSON.stringify(current) !== JSON.stringify(draft);
+}
+
+function isObservationOnlyDomain(domain: Domain) {
+  return domain.status === "available" || domain.status === "captured";
+}
+
 function isDomainInTab(domain: Domain, tab: DomainTab) {
   switch (tab) {
     case "checking":
@@ -250,8 +260,8 @@ function isDomainInTab(domain: Domain, tab: DomainTab) {
 
 function currentInterval(domain: Domain) {
   switch (domain.check_mode) {
-    case "burst":
-      return { seconds: domain.burst_check_interval, approximate: false };
+    case "capture-watch":
+      return { seconds: domain.pattern_fast_interval, approximate: false };
     case "pattern-fast":
       return { seconds: domain.pattern_fast_interval, approximate: false };
     case "pattern-slow":
@@ -281,6 +291,7 @@ export default function App() {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [monitoringHealth, setMonitoringHealth] = useState<MonitoringHealth | null>(null);
   const [domainDrafts, setDomainDrafts] = useState<Record<number, DomainDraft>>({});
+  const [dirtyDomainIds, setDirtyDomainIds] = useState<Record<number, boolean>>({});
   const [expandedSettings, setExpandedSettings] = useState<Record<number, boolean>>({});
 
   const [adminUsers, setAdminUsers] = useState<AdminUser[]>([]);
@@ -462,11 +473,15 @@ export default function App() {
     setDomainDrafts((current) => {
       const next: Record<number, DomainDraft> = {};
       for (const domain of domains) {
-        next[domain.id] = current[domain.id] ?? domainDraftFromDomain(domain);
+        if (dirtyDomainIds[domain.id] && current[domain.id]) {
+          next[domain.id] = current[domain.id];
+        } else {
+          next[domain.id] = domainDraftFromDomain(domain);
+        }
       }
       return next;
     });
-  }, [domains]);
+  }, [dirtyDomainIds, domains]);
 
   async function loadAdmin() {
     const [users, promo, audit] = await Promise.all([
@@ -525,6 +540,7 @@ export default function App() {
         [key]: value,
       },
     }));
+    setDirtyDomainIds((current) => ({ ...current, [domainId]: true }));
   }
 
   function toggleSettings(domainId: number) {
@@ -627,9 +643,21 @@ export default function App() {
     }, l("Прокси добавлен", "Proxy added"));
   }
 
-  async function updateDomain(domainId: number, payload: Record<string, unknown>, successText: string) {
+  async function updateDomain(
+    domainId: number,
+    payload: Record<string, unknown>,
+    successText: string,
+    options?: { syncDraft?: boolean },
+  ) {
     await runAction(async () => {
-      await api.updateDomain(domainId, payload);
+      const updated = await api.updateDomain(domainId, payload);
+      if (options?.syncDraft) {
+        setDomainDrafts((current) => ({
+          ...current,
+          [domainId]: domainDraftFromDomain(updated),
+        }));
+        setDirtyDomainIds((current) => ({ ...current, [domainId]: false }));
+      }
       await refreshDashboard();
     }, successText);
   }
@@ -643,6 +671,7 @@ export default function App() {
       domain.id,
       payloadFromDraft(draft),
       l(`Настройки домена ${domain.domain} применены`, `Settings saved for ${domain.domain}`),
+      { syncDraft: true },
     );
   }
 
@@ -651,9 +680,10 @@ export default function App() {
       ...current,
       [domain.id]: domainDraftFromDomain(domain),
     }));
+    setDirtyDomainIds((current) => ({ ...current, [domain.id]: false }));
     setToast({
       type: "success",
-      text: l(`Черновик настроек для ${domain.domain} сброшен`, `Draft reset for ${domain.domain}`),
+      text: l(`Сохраненные значения для ${domain.domain} восстановлены`, `Saved values restored for ${domain.domain}`),
     });
   }
 
@@ -674,6 +704,7 @@ export default function App() {
       scheduler_mode === "continuous"
         ? l(`Для ${domain.domain} включен постоянный режим`, `Continuous mode enabled for ${domain.domain}`)
         : l(`Для ${domain.domain} включен режим по окну дропа`, `Drop-window mode enabled for ${domain.domain}`),
+      { syncDraft: true },
     );
   }
 
@@ -684,6 +715,7 @@ export default function App() {
       domain.manual_burst
         ? l(`Ручной burst для ${domain.domain} отключен`, `Manual burst disabled for ${domain.domain}`)
         : l(`Ручной burst для ${domain.domain} включен`, `Manual burst enabled for ${domain.domain}`),
+      { syncDraft: true },
     );
   }
 
@@ -695,6 +727,7 @@ export default function App() {
       enabled
         ? l(`Для ${domain.domain} включено медленное наблюдение после освобождения`, `Slow recheck enabled for ${domain.domain}`)
         : l(`Для ${domain.domain} остановлено медленное наблюдение`, `Slow recheck disabled for ${domain.domain}`),
+      { syncDraft: true },
     );
   }
 
@@ -1190,6 +1223,378 @@ export default function App() {
     );
   }
 
+  function renderCompactDomainSettingsEditor(domain: Domain) {
+    const draft = domainDrafts[domain.id] ?? domainDraftFromDomain(domain);
+    const hasChanges = !!dirtyDomainIds[domain.id] && hasUnsavedChanges(domain, draft);
+    const observationOnly = isObservationOnlyDomain(domain);
+
+    return (
+      <div className="domain-settings">
+        <div className="card-head compact-head">
+          <div>
+            <h3>{l("РќР°СЃС‚СЂРѕР№РєРё РґРѕРјРµРЅР°", "Domain settings")}</h3>
+            <span className={hasChanges ? "status checking" : "status available"}>
+              {hasChanges ? l("Р•СЃС‚СЊ С‡РµСЂРЅРѕРІРёРє", "Unsaved draft") : l("РЎРѕС…СЂР°РЅРµРЅРѕ", "Saved")}
+            </span>
+          </div>
+        </div>
+
+        <div className="form two-columns">
+          {!observationOnly ? (
+            <>
+              <div className="wide-input">
+                {renderField(
+                  "Р РµР¶РёРј РјРѕРЅРёС‚РѕСЂРёРЅРіР°",
+                  "Monitoring mode",
+                  <div className="segmented-control">
+                    <button
+                      type="button"
+                      className={draft.scheduler_mode === "continuous" ? "ghost active-chip" : "ghost"}
+                      onClick={() => updateDomainDraft(domain.id, "scheduler_mode", "continuous")}
+                    >
+                      {l("РџРѕСЃС‚РѕСЏРЅРЅС‹Р№", "Continuous")}
+                    </button>
+                    <button
+                      type="button"
+                      className={draft.scheduler_mode === "pattern" ? "ghost active-chip" : "ghost"}
+                      onClick={() => updateDomainDraft(domain.id, "scheduler_mode", "pattern")}
+                    >
+                      {l("РџРѕ РѕРєРЅСѓ РґСЂРѕРїР°", "Drop window")}
+                    </button>
+                  </div>,
+                )}
+              </div>
+
+              {renderField(
+                "РџРѕРґС‚РІРµСЂР¶РґРµРЅРёР№ РґРѕ СЃС‚Р°С‚СѓСЃР° Р”РѕСЃС‚СѓРїРµРЅ",
+                "Confirmations before Available",
+                <input
+                  value={draft.confirmation_threshold}
+                  onChange={(event) => updateDomainDraft(domain.id, "confirmation_threshold", event.target.value)}
+                />,
+              )}
+
+              {draft.scheduler_mode === "continuous"
+                ? renderField(
+                    "РРЅС‚РµСЂРІР°Р» РїСЂРѕРІРµСЂРєРё, СЃРµРє",
+                    "Check interval, sec",
+                    <input
+                      value={draft.check_interval}
+                      onChange={(event) => updateDomainDraft(domain.id, "check_interval", event.target.value)}
+                    />,
+                  )
+                : null}
+
+              {draft.scheduler_mode === "pattern" ? (
+                <>
+                  {renderField(
+                    "РРЅС‚РµСЂРІР°Р» РІРЅРµ РѕРєРЅР°, СЃРµРє",
+                    "Outside window interval, sec",
+                    <input
+                      value={draft.pattern_slow_interval}
+                      onChange={(event) => updateDomainDraft(domain.id, "pattern_slow_interval", event.target.value)}
+                    />,
+                  )}
+                  {renderField(
+                    "РРЅС‚РµСЂРІР°Р» РІ РѕРєРЅРµ, СЃРµРє",
+                    "Inside window interval, sec",
+                    <input
+                      value={draft.pattern_fast_interval}
+                      onChange={(event) => updateDomainDraft(domain.id, "pattern_fast_interval", event.target.value)}
+                    />,
+                  )}
+                  {renderField(
+                    "РЎС‚Р°СЂС‚ РѕРєРЅР°, РјРёРЅСѓС‚Р° С‡Р°СЃР°",
+                    "Window start minute",
+                    <input
+                      value={draft.pattern_window_start_minute}
+                      onChange={(event) => updateDomainDraft(domain.id, "pattern_window_start_minute", event.target.value)}
+                    />,
+                  )}
+                  {renderField(
+                    "РљРѕРЅРµС† РѕРєРЅР°, РјРёРЅСѓС‚Р° С‡Р°СЃР°",
+                    "Window end minute",
+                    <input
+                      value={draft.pattern_window_end_minute}
+                      onChange={(event) => updateDomainDraft(domain.id, "pattern_window_end_minute", event.target.value)}
+                    />,
+                  )}
+                </>
+              ) : null}
+            </>
+          ) : null}
+
+          <div className="wide-input">
+            {renderField(
+              "РќР°Р±Р»СЋРґР°С‚СЊ РїРѕСЃР»Рµ РѕСЃРІРѕР±РѕР¶РґРµРЅРёСЏ",
+              "Observe after availability",
+              <div className="segmented-control">
+                <button
+                  type="button"
+                  className={draft.available_recheck_enabled ? "ghost active-chip" : "ghost"}
+                  onClick={() => updateDomainDraft(domain.id, "available_recheck_enabled", true)}
+                >
+                  {l("Р”Р°", "Yes")}
+                </button>
+                <button
+                  type="button"
+                  className={!draft.available_recheck_enabled ? "ghost active-chip" : "ghost"}
+                  onClick={() => updateDomainDraft(domain.id, "available_recheck_enabled", false)}
+                >
+                  {l("РќРµС‚", "No")}
+                </button>
+              </div>,
+            )}
+          </div>
+
+          {draft.available_recheck_enabled
+            ? renderField(
+                "РРЅС‚РµСЂРІР°Р» РЅР°Р±Р»СЋРґРµРЅРёСЏ РїРѕСЃР»Рµ РѕСЃРІРѕР±РѕР¶РґРµРЅРёСЏ, СЃРµРє",
+                "Post-availability recheck interval, sec",
+                <input
+                  value={draft.available_recheck_interval}
+                  onChange={(event) => updateDomainDraft(domain.id, "available_recheck_interval", event.target.value)}
+                />,
+                "РќР°РїСЂРёРјРµСЂ 1800 СЃРµРєСѓРЅРґ = 30 РјРёРЅСѓС‚.",
+                "For example, 1800 seconds = 30 minutes.",
+              )
+            : null}
+        </div>
+
+        <div className="actions">
+          <button type="button" onClick={() => void applyDomainSettings(domain)} disabled={!canUseFeatures || !hasChanges}>
+            {l("РџСЂРёРјРµРЅРёС‚СЊ РЅР°СЃС‚СЂРѕР№РєРё", "Apply settings")}
+          </button>
+          <button type="button" className="ghost" onClick={() => resetDomainSettings(domain)} disabled={!hasChanges}>
+            {l("Р’РѕСЃСЃС‚Р°РЅРѕРІРёС‚СЊ СЃРѕС…СЂР°РЅРµРЅРЅРѕРµ", "Restore saved values")}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  function renderCompactDomainCard(domain: Domain) {
+    const health = domainHealth.get(domain.id);
+    const interval = currentInterval(domain);
+    const settingsOpen = !!expandedSettings[domain.id];
+    const draft = domainDrafts[domain.id] ?? domainDraftFromDomain(domain);
+    const hasChanges = !!dirtyDomainIds[domain.id] && hasUnsavedChanges(domain, draft);
+    const observationOnly = isObservationOnlyDomain(domain);
+
+    return (
+      <article key={domain.id} className="domain-card card">
+        <div className="domain-card-head">
+          <div>
+            <div className="domain-title-row">
+              <h3>{domain.domain}</h3>
+              <span className={STATUS_CLASS[domain.status] ?? "status"}>{statusLabel(domain.status, language)}</span>
+              {health?.is_stale ? <span className="status error">{l("Р’РѕСЂРєРµСЂ Р·Р°СЃС‚С‹Р»", "Worker is stale")}</span> : null}
+              {hasChanges ? <span className="status checking">{l("Р•СЃС‚СЊ С‡РµСЂРЅРѕРІРёРє", "Unsaved draft")}</span> : null}
+            </div>
+            <div className="domain-summary-line">
+              <span>{l("РџРѕСЃР»РµРґРЅСЏСЏ РїСЂРѕРІРµСЂРєР°", "Last check")}: {formatPreciseDate(domain.last_check_at, language)}</span>
+              <span>{l("РЎРµР№С‡Р°СЃ", "Now")}: {runtimeModeLabel(domain.check_mode, language)}</span>
+              <span>{l("РЎРµР№С‡Р°СЃ РїСЂРёРјРµРЅСЏРµС‚СЃСЏ", "Applied now")}: {formatSeconds(interval.seconds, language, interval.approximate)}</span>
+              {!observationOnly ? (
+                <span>{l("РџРѕРґС‚РІРµСЂР¶РґРµРЅРёСЏ", "Confirmations")}: {domain.available_confirmations}/{domain.confirmation_threshold}</span>
+              ) : null}
+            </div>
+          </div>
+
+          <div className="actions wrap">
+            <button type="button" onClick={() => void toggleDomain(domain)} disabled={!canUseFeatures}>
+              {domain.is_active ? l("РћСЃС‚Р°РЅРѕРІРёС‚СЊ РјРѕРЅРёС‚РѕСЂРёРЅРі", "Pause monitoring") : l("Р’РѕР·РѕР±РЅРѕРІРёС‚СЊ РјРѕРЅРёС‚РѕСЂРёРЅРі", "Resume monitoring")}
+            </button>
+            {!observationOnly ? (
+              <div className="segmented-control compact">
+                <button
+                  type="button"
+                  className={domain.scheduler_mode === "continuous" ? "ghost active-chip" : "ghost"}
+                  onClick={() => void switchSchedulerMode(domain, "continuous")}
+                  disabled={!canUseFeatures}
+                >
+                  {l("РџРѕСЃС‚РѕСЏРЅРЅС‹Р№", "Continuous")}
+                </button>
+                <button
+                  type="button"
+                  className={domain.scheduler_mode === "pattern" ? "ghost active-chip" : "ghost"}
+                  onClick={() => void switchSchedulerMode(domain, "pattern")}
+                  disabled={!canUseFeatures}
+                >
+                  {l("РџРѕ РѕРєРЅСѓ", "Window")}
+                </button>
+              </div>
+            ) : null}
+            <button type="button" className="ghost" onClick={() => toggleSettings(domain.id)}>
+              {settingsOpen ? l("РЎРєСЂС‹С‚СЊ РЅР°СЃС‚СЂРѕР№РєРё", "Hide settings") : l("РџРѕРєР°Р·Р°С‚СЊ РЅР°СЃС‚СЂРѕР№РєРё", "Show settings")}
+            </button>
+            <button type="button" className="danger" onClick={() => void removeDomain(domain.id)} disabled={!canUseFeatures}>
+              {l("РЈРґР°Р»РёС‚СЊ РґРѕРјРµРЅ", "Delete domain")}
+            </button>
+          </div>
+        </div>
+
+        <div className="domain-metrics compact-grid">
+          <div>
+            <span>{l("РџРѕСЃР»РµРґРЅРёР№ РІР»Р°РґРµР»РµС†", "Last owner")}</span>
+            <strong>{domain.last_seen_owner ?? l("РќРµС‚ РґР°РЅРЅС‹С…", "No data")}</strong>
+          </div>
+          <div>
+            <span>{l("РџРѕСЃР»РµРґРЅРёР№ RDAP-СЃС‚Р°С‚СѓСЃ", "Last RDAP status")}</span>
+            <strong>{domain.last_seen_rdap_status ?? l("РќРµС‚ РґР°РЅРЅС‹С…", "No data")}</strong>
+          </div>
+          <div>
+            <span>{l("РџРѕРґС‚РІРµСЂР¶РґРµРЅ РєР°Рє РґРѕСЃС‚СѓРїРЅС‹Р№", "Confirmed available at")}</span>
+            <strong>{formatPreciseDate(domain.available_at, language)}</strong>
+          </div>
+          <div>
+            <span>{l("РџРѕСЃР»РµРґРЅСЏСЏ СЃРјРµРЅР° РІР»Р°РґРµР»СЊС†Р°", "Last owner change")}</span>
+            <strong>{formatPreciseDate(domain.last_owner_change_at, language)}</strong>
+          </div>
+        </div>
+
+        {domain.last_error ? <div className="inline-alert error">{domain.last_error}</div> : null}
+        {health?.is_stale ? (
+          <div className="inline-alert error">
+            {l(
+              "Р’РѕСЂРєРµСЂ РґР»СЏ СЌС‚РѕРіРѕ РґРѕРјРµРЅР° РґР°РІРЅРѕ РЅРµ РѕР±РЅРѕРІР»СЏР» heartbeat. Р•СЃР»Рё Р±РµР№РґР¶ РЅРµ РёСЃС‡РµР·Р°РµС‚, СѓР¶Рµ РЅСѓР¶РЅРѕ СЃРјРѕС‚СЂРµС‚СЊ Р»РѕРіРё СЃРµСЂРІРёСЃР°.",
+              "This worker has not updated its heartbeat for too long. If the badge does not disappear, check service logs.",
+            )}
+          </div>
+        ) : null}
+
+        {settingsOpen ? renderCompactDomainSettingsEditor(domain) : null}
+      </article>
+    );
+  }
+
+  function renderCompactNewDomainSettings() {
+    return (
+      <div className="card">
+        <div className="card-head">
+          <div>
+            <h2>{l("РџР°СЂР°РјРµС‚СЂС‹ РґР»СЏ РЅРѕРІС‹С… РґРѕРјРµРЅРѕРІ", "Defaults for new domains")}</h2>
+          </div>
+        </div>
+        <div className="form two-columns">
+          <div className="wide-input">
+            {renderField(
+              "Р РµР¶РёРј РјРѕРЅРёС‚РѕСЂРёРЅРіР°",
+              "Monitoring mode",
+              <div className="segmented-control">
+                <button
+                  type="button"
+                  className={newDomainSettings.scheduler_mode === "continuous" ? "ghost active-chip" : "ghost"}
+                  onClick={() => updateNewDomainSettings("scheduler_mode", "continuous")}
+                >
+                  {l("РџРѕСЃС‚РѕСЏРЅРЅС‹Р№", "Continuous")}
+                </button>
+                <button
+                  type="button"
+                  className={newDomainSettings.scheduler_mode === "pattern" ? "ghost active-chip" : "ghost"}
+                  onClick={() => updateNewDomainSettings("scheduler_mode", "pattern")}
+                >
+                  {l("РџРѕ РѕРєРЅСѓ РґСЂРѕРїР°", "Drop window")}
+                </button>
+              </div>,
+            )}
+          </div>
+
+          {renderField(
+            "РџРѕРґС‚РІРµСЂР¶РґРµРЅРёР№ РґРѕ СЃС‚Р°С‚СѓСЃР° Р”РѕСЃС‚СѓРїРµРЅ",
+            "Confirmations before Available",
+            <input
+              value={newDomainSettings.confirmation_threshold}
+              onChange={(event) => updateNewDomainSettings("confirmation_threshold", event.target.value)}
+            />,
+          )}
+
+          {newDomainSettings.scheduler_mode === "continuous"
+            ? renderField(
+                "РРЅС‚РµСЂРІР°Р» РїСЂРѕРІРµСЂРєРё, СЃРµРє",
+                "Check interval, sec",
+                <input
+                  value={newDomainSettings.check_interval}
+                  onChange={(event) => updateNewDomainSettings("check_interval", event.target.value)}
+                />,
+              )
+            : null}
+
+          {newDomainSettings.scheduler_mode === "pattern" ? (
+            <>
+              {renderField(
+                "РРЅС‚РµСЂРІР°Р» РІРЅРµ РѕРєРЅР°, СЃРµРє",
+                "Outside window interval, sec",
+                <input
+                  value={newDomainSettings.pattern_slow_interval}
+                  onChange={(event) => updateNewDomainSettings("pattern_slow_interval", event.target.value)}
+                />,
+              )}
+              {renderField(
+                "РРЅС‚РµСЂРІР°Р» РІ РѕРєРЅРµ, СЃРµРє",
+                "Inside window interval, sec",
+                <input
+                  value={newDomainSettings.pattern_fast_interval}
+                  onChange={(event) => updateNewDomainSettings("pattern_fast_interval", event.target.value)}
+                />,
+              )}
+              {renderField(
+                "РЎС‚Р°СЂС‚ РѕРєРЅР°, РјРёРЅСѓС‚Р° С‡Р°СЃР°",
+                "Window start minute",
+                <input
+                  value={newDomainSettings.pattern_window_start_minute}
+                  onChange={(event) => updateNewDomainSettings("pattern_window_start_minute", event.target.value)}
+                />,
+              )}
+              {renderField(
+                "РљРѕРЅРµС† РѕРєРЅР°, РјРёРЅСѓС‚Р° С‡Р°СЃР°",
+                "Window end minute",
+                <input
+                  value={newDomainSettings.pattern_window_end_minute}
+                  onChange={(event) => updateNewDomainSettings("pattern_window_end_minute", event.target.value)}
+                />,
+              )}
+            </>
+          ) : null}
+
+          <div className="wide-input">
+            {renderField(
+              "РќР°Р±Р»СЋРґР°С‚СЊ РїРѕСЃР»Рµ РѕСЃРІРѕР±РѕР¶РґРµРЅРёСЏ",
+              "Observe after availability",
+              <div className="segmented-control">
+                <button
+                  type="button"
+                  className={newDomainSettings.available_recheck_enabled ? "ghost active-chip" : "ghost"}
+                  onClick={() => updateNewDomainSettings("available_recheck_enabled", true)}
+                >
+                  {l("Р”Р°", "Yes")}
+                </button>
+                <button
+                  type="button"
+                  className={!newDomainSettings.available_recheck_enabled ? "ghost active-chip" : "ghost"}
+                  onClick={() => updateNewDomainSettings("available_recheck_enabled", false)}
+                >
+                  {l("РќРµС‚", "No")}
+                </button>
+              </div>,
+            )}
+          </div>
+
+          {newDomainSettings.available_recheck_enabled
+            ? renderField(
+                "РРЅС‚РµСЂРІР°Р» РЅР°Р±Р»СЋРґРµРЅРёСЏ РїРѕСЃР»Рµ РѕСЃРІРѕР±РѕР¶РґРµРЅРёСЏ, СЃРµРє",
+                "Post-availability recheck interval, sec",
+                <input
+                  value={newDomainSettings.available_recheck_interval}
+                  onChange={(event) => updateNewDomainSettings("available_recheck_interval", event.target.value)}
+                />,
+              )
+            : null}
+        </div>
+      </div>
+    );
+  }
+
   function renderAuth() {
     return (
       <div className="auth-shell">
@@ -1318,7 +1723,7 @@ export default function App() {
             </div>
 
             <div className="domain-list">
-              {filteredDomains.map((domain) => renderDomainCard(domain))}
+              {filteredDomains.map((domain) => renderCompactDomainCard(domain))}
               {!filteredDomains.length ? (
                 <div className="empty-block">
                   {l("Для выбранной вкладки доменов пока нет.", "There are no domains in the selected tab yet.")}
@@ -1328,7 +1733,7 @@ export default function App() {
           </div>
 
           <div className="stack">
-            {renderNewDomainSettings()}
+            {renderCompactNewDomainSettings()}
 
             <div className="card">
               <h2>{l("Добавить один домен", "Add one domain")}</h2>

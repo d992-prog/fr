@@ -265,9 +265,15 @@ class MonitoringOrchestrator:
             if should_alert:
                 domain.alert_sent_at = checked_at
                 domain.available_at = checked_at
+            available_reference = domain.available_at or checked_at
+            within_capture_watch = (
+                decision.status == "available"
+                and (checked_at - available_reference).total_seconds() < self.settings.available_capture_watch_seconds
+            )
+
             if decision.status == "captured":
                 domain.is_active = False
-            if decision.status == "available" and not domain.available_recheck_enabled:
+            elif decision.status == "available" and not domain.available_recheck_enabled and not within_capture_watch:
                 domain.is_active = False
 
             if decision.should_log:

@@ -36,6 +36,14 @@ class Settings(BaseSettings):
     pattern_slow_interval: float = Field(default=60.0, alias="PATTERN_SLOW_INTERVAL")
     pattern_fast_interval: float = Field(default=0.5, alias="PATTERN_FAST_INTERVAL")
     available_recheck_interval: float = Field(default=1800.0, alias="AVAILABLE_RECHECK_INTERVAL")
+    available_capture_watch_seconds: int = Field(
+        default=15,
+        alias="AVAILABLE_CAPTURE_WATCH_SECONDS",
+    )
+    available_capture_watch_interval: float = Field(
+        default=0.5,
+        alias="AVAILABLE_CAPTURE_WATCH_INTERVAL",
+    )
     available_confirmation_threshold: int = Field(
         default=3,
         alias="AVAILABLE_CONFIRMATION_THRESHOLD",
