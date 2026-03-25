@@ -3,6 +3,7 @@ import { FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
 import {
   AdminUser,
   AuditLog,
+  DiagnosticTelegramSettings,
   Domain,
   DomainSettingsPayload,
   LogEntry,
@@ -326,6 +327,10 @@ export default function App() {
     expiresAt: "",
     isActive: true,
   });
+  const [diagnosticTelegram, setDiagnosticTelegram] = useState<DiagnosticTelegramSettings>({
+    telegram_token: "",
+    telegram_chat_id: "",
+  });
 
   const l = (ru: string, en: string) => (language === "ru" ? ru : en);
   const isAdmin = session?.user.role === "owner" || session?.user.role === "admin";
@@ -455,7 +460,7 @@ export default function App() {
     };
 
     void load();
-    const timer = window.setInterval(load, 10000);
+    const timer = window.setInterval(load, 15000);
     return () => {
       ignore = true;
       window.clearInterval(timer);
@@ -463,7 +468,7 @@ export default function App() {
   }, [language, session?.user.id]);
 
   useEffect(() => {
-    if (!session || !isAdmin || view !== "admin") {
+    if (!session || !isAdmin || (view !== "admin" && view !== "profile")) {
       return;
     }
     void loadAdmin();
@@ -484,15 +489,20 @@ export default function App() {
   }, [dirtyDomainIds, domains]);
 
   async function loadAdmin() {
-    const [users, promo, audit] = await Promise.all([
+    const [users, promo, audit, diagnostic] = await Promise.all([
       api.getAdminUsers(adminStatusFilter || undefined, includeDeleted),
       api.getPromoCodes(),
       api.getAuditLogs(),
+      api.getDiagnosticTelegram(),
     ]);
     setAdminUsers(users);
     setPromoCodes(promo);
     setAuditLogs(audit);
     setUserDrafts(buildUserDrafts(users));
+    setDiagnosticTelegram({
+      telegram_token: diagnostic.telegram_token ?? "",
+      telegram_chat_id: diagnostic.telegram_chat_id ?? "",
+    });
   }
 
   async function refreshDashboard() {
@@ -873,6 +883,23 @@ export default function App() {
     }, l("Промокод создан", "Promo code created"));
   }
 
+  async function saveDiagnosticTelegram(event: FormEvent) {
+    event.preventDefault();
+    await runAction(async () => {
+      await api.updateDiagnosticTelegram({
+        telegram_token: diagnosticTelegram.telegram_token || null,
+        telegram_chat_id: diagnosticTelegram.telegram_chat_id || null,
+      });
+      await loadAdmin();
+    }, l("Диагностический Telegram обновлен", "Diagnostic Telegram updated"));
+  }
+
+  async function testDiagnosticTelegram() {
+    await runAction(async () => {
+      await api.testDiagnosticTelegram();
+    }, l("Тестовое диагностическое сообщение отправлено", "Diagnostic test message sent"));
+  }
+
   function renderField(
     labelRu: string,
     labelEn: string,
@@ -1032,7 +1059,7 @@ export default function App() {
           </div>
 
           <div className="actions wrap">
-            <button type="button" onClick={() => void toggleDomain(domain)} disabled={!canUseFeatures}>
+            <button type="button" onClick={() => void toggleDomain(domain)} disabled={!domain.is_active && !canUseFeatures}>
               {domain.is_active ? l("Остановить мониторинг", "Pause monitoring") : l("Возобновить мониторинг", "Resume monitoring")}
             </button>
             <button
@@ -1064,7 +1091,7 @@ export default function App() {
             <button type="button" className="ghost" onClick={() => toggleSettings(domain.id)}>
               {settingsOpen ? l("Скрыть настройки", "Hide settings") : l("Показать настройки", "Show settings")}
             </button>
-            <button type="button" className="danger" onClick={() => void removeDomain(domain.id)} disabled={!canUseFeatures}>
+            <button type="button" className="danger" onClick={() => void removeDomain(domain.id)}>
               {l("Удалить домен", "Delete domain")}
             </button>
           </div>
@@ -1402,7 +1429,7 @@ export default function App() {
           </div>
 
           <div className="actions wrap">
-            <button type="button" onClick={() => void toggleDomain(domain)} disabled={!canUseFeatures}>
+            <button type="button" onClick={() => void toggleDomain(domain)} disabled={!domain.is_active && !canUseFeatures}>
               {domain.is_active ? l("Остановить мониторинг", "Pause monitoring") : l("Возобновить мониторинг", "Resume monitoring")}
             </button>
             {!observationOnly ? (
@@ -1428,7 +1455,7 @@ export default function App() {
             <button type="button" className="ghost" onClick={() => toggleSettings(domain.id)}>
               {settingsOpen ? l("Скрыть настройки", "Hide settings") : l("Показать настройки", "Show settings")}
             </button>
-            <button type="button" className="danger" onClick={() => void removeDomain(domain.id)} disabled={!canUseFeatures}>
+            <button type="button" className="danger" onClick={() => void removeDomain(domain.id)}>
               {l("Удалить домен", "Delete domain")}
             </button>
           </div>
@@ -1970,6 +1997,38 @@ export default function App() {
                 <strong>{availableCount}</strong>
               </div>
             </div>
+          </div>
+
+          <div className="card">
+            <h2>{l("Диагностический Telegram", "Diagnostic Telegram")}</h2>
+            <p className="muted">
+              {l(
+                "Сервис будет отправлять сюда рестарты воркеров, повторяющиеся ошибки и другие сигналы, полезные для диагностики.",
+                "The service will send worker restarts, repeated failures, and other useful troubleshooting signals here.",
+              )}
+            </p>
+            <form className="form" onSubmit={saveDiagnosticTelegram}>
+              <input
+                placeholder={l("Токен диагностического бота", "Diagnostic bot token")}
+                value={diagnosticTelegram.telegram_token ?? ""}
+                onChange={(event) =>
+                  setDiagnosticTelegram((current) => ({ ...current, telegram_token: event.target.value }))
+                }
+              />
+              <input
+                placeholder={l("Chat ID для диагностики", "Diagnostic chat ID")}
+                value={diagnosticTelegram.telegram_chat_id ?? ""}
+                onChange={(event) =>
+                  setDiagnosticTelegram((current) => ({ ...current, telegram_chat_id: event.target.value }))
+                }
+              />
+              <div className="actions">
+                <button type="submit">{l("Сохранить", "Save")}</button>
+                <button type="button" className="ghost" onClick={() => void testDiagnosticTelegram()}>
+                  {l("Тестовое сообщение", "Send test")}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       </section>

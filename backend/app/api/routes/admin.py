@@ -14,14 +14,24 @@ from app.schemas.admin import (
     AdminAuditLogResponse,
     AdminUserResponse,
     AdminUserUpdateRequest,
+    DiagnosticTelegramSettingsRequest,
+    DiagnosticTelegramSettingsResponse,
     GrantAccessRequest,
     ManualUserCreateRequest,
     PromoCodeCreateRequest,
     PromoCodeResponse,
 )
 from app.schemas.auth import UserResponse
+from app.services.app_settings import (
+    DIAGNOSTIC_TELEGRAM_CHAT_ID_KEY,
+    DIAGNOSTIC_TELEGRAM_TOKEN_KEY,
+    get_diagnostic_telegram_settings,
+    set_app_setting,
+)
 from app.services.audit import add_audit_log
+from app.services.notifier import TelegramNotifier
 from app.services.security import hash_password
+from app.core.config import get_settings
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -302,3 +312,58 @@ async def _stop_user_domains(user_id: int, request: Request, db: AsyncSession) -
     monitoring = get_monitoring(request)
     for domain_id in domain_ids:
         await monitoring.stop_domain(domain_id)
+
+
+@router.get("/diagnostic-telegram", response_model=DiagnosticTelegramSettingsResponse)
+async def get_diagnostic_telegram(
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(require_admin),
+) -> DiagnosticTelegramSettingsResponse:
+    del admin
+    token, chat_id = await get_diagnostic_telegram_settings(db)
+    return DiagnosticTelegramSettingsResponse(
+        telegram_token=token,
+        telegram_chat_id=chat_id,
+    )
+
+
+@router.post("/diagnostic-telegram", response_model=DiagnosticTelegramSettingsResponse)
+async def update_diagnostic_telegram(
+    payload: DiagnosticTelegramSettingsRequest,
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(require_admin),
+) -> DiagnosticTelegramSettingsResponse:
+    token = payload.telegram_token or None
+    chat_id = payload.telegram_chat_id or None
+    await set_app_setting(db, DIAGNOSTIC_TELEGRAM_TOKEN_KEY, token)
+    await set_app_setting(db, DIAGNOSTIC_TELEGRAM_CHAT_ID_KEY, chat_id)
+    await add_audit_log(
+        db,
+        actor_user_id=admin.id,
+        target_user_id=None,
+        action="update_diagnostic_telegram",
+        details=f"configured={bool(token and chat_id)}",
+    )
+    await db.commit()
+    return DiagnosticTelegramSettingsResponse(
+        telegram_token=token,
+        telegram_chat_id=chat_id,
+    )
+
+
+@router.post("/diagnostic-telegram/test")
+async def test_diagnostic_telegram(
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(require_admin),
+) -> dict[str, str]:
+    token, chat_id = await get_diagnostic_telegram_settings(db)
+    if not token or not chat_id:
+        raise HTTPException(status_code=400, detail="Diagnostic Telegram settings are empty")
+    notifier = TelegramNotifier(get_settings())
+    await notifier.send_diagnostic(
+        "Diagnostic channel test",
+        f"Admin @{admin.username} requested a test message at {utcnow().isoformat()}",
+        token=token,
+        chat_id=chat_id,
+    )
+    return {"detail": "Diagnostic Telegram message sent"}

@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     rdap_base_url: str = Field(default="https://rdap.nic.fr/domain/", alias="RDAP_BASE_URL")
     request_timeout: float = 5.0
     dns_timeout_seconds: float = Field(default=2.5, alias="DNS_TIMEOUT_SECONDS")
+    dns_fallback_nameservers: str = Field(default="1.1.1.1,8.8.8.8", alias="DNS_FALLBACK_NAMESERVERS")
     rdap_timeout_seconds: float = Field(default=4.0, alias="RDAP_TIMEOUT_SECONDS")
     worker_cycle_timeout_seconds: float = Field(default=10.0, alias="WORKER_CYCLE_TIMEOUT_SECONDS")
     worker_supervisor_interval_seconds: int = Field(
@@ -68,6 +69,10 @@ class Settings(BaseSettings):
         if self.cors_origins.strip() == "*":
             return ["*"]
         return [item.strip() for item in self.cors_origins.split(",") if item.strip()]
+
+    @property
+    def dns_fallback_nameserver_list(self) -> list[str]:
+        return [item.strip() for item in self.dns_fallback_nameservers.split(",") if item.strip()]
 
     @property
     def frontend_dist_dir(self) -> Path:

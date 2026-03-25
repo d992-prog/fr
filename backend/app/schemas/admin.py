@@ -76,3 +76,13 @@ class AdminAuditLogResponse(BaseModel):
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class DiagnosticTelegramSettingsRequest(BaseModel):
+    telegram_token: str | None = None
+    telegram_chat_id: str | None = None
+
+
+class DiagnosticTelegramSettingsResponse(BaseModel):
+    telegram_token: str | None
+    telegram_chat_id: str | None

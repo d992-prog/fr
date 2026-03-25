@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 
 MIGRATIONS = (
+    "CREATE TABLE IF NOT EXISTS app_settings (id SERIAL PRIMARY KEY, key VARCHAR(128) UNIQUE NOT NULL, value TEXT NULL, updated_at TIMESTAMPTZ DEFAULT NOW())",
     "ALTER TABLE domains DROP CONSTRAINT IF EXISTS domains_domain_key",
     "DROP INDEX IF EXISTS ix_domains_domain",
     "ALTER TABLE domains ADD COLUMN IF NOT EXISTS owner_id INTEGER NULL REFERENCES users(id) ON DELETE CASCADE",

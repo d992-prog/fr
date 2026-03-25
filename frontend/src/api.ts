@@ -148,6 +148,11 @@ export type AuditLog = {
   created_at: string;
 };
 
+export type DiagnosticTelegramSettings = {
+  telegram_token: string | null;
+  telegram_chat_id: string | null;
+};
+
 const API_BASE = import.meta.env.VITE_API_BASE ?? "/api";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -281,4 +286,11 @@ export const api = {
       body: JSON.stringify(payload),
     }),
   getAuditLogs: () => request<AuditLog[]>("/admin/audit-logs?limit=50"),
+  getDiagnosticTelegram: () => request<DiagnosticTelegramSettings>("/admin/diagnostic-telegram"),
+  updateDiagnosticTelegram: (payload: DiagnosticTelegramSettings) =>
+    request<DiagnosticTelegramSettings>("/admin/diagnostic-telegram", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  testDiagnosticTelegram: () => request<{ detail: string }>("/admin/diagnostic-telegram/test", { method: "POST" }),
 };

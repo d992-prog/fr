@@ -38,6 +38,11 @@ def validate_scheduler_mode(value: str | None) -> str | None:
     return value
 
 
+def allow_restricted_domain_action(payload: DomainUpdateRequest) -> bool:
+    changes = payload.model_dump(exclude_none=True)
+    return changes == {"is_active": False}
+
+
 def serialize_domain(domain: Domain, *, masked: bool) -> DomainResponse:
     return DomainResponse(
         id=domain.id,
@@ -232,8 +237,14 @@ async def update_domain(
     payload: DomainUpdateRequest,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_feature_access),
+    user: User = Depends(get_current_user),
 ) -> DomainResponse:
+    if not user_has_feature_access(user) and user.role not in {"owner", "admin"}:
+        if not allow_restricted_domain_action(payload):
+            raise HTTPException(
+                status_code=403,
+                detail=user.status_message or "Account access is restricted",
+            )
     domain = await db.get(Domain, domain_id)
     if domain is None or domain.owner_id != user.id:
         raise HTTPException(status_code=404, detail="Domain not found")
@@ -288,7 +299,16 @@ async def update_domain(
     if domain.is_active:
         await monitoring.ensure_domain(domain.id)
     else:
-        await monitoring.stop_domain(domain.id)
+        detached = await monitoring.stop_domain(domain.id)
+        if detached:
+            await add_log(
+                db,
+                owner_id=user.id,
+                domain_id=domain.id,
+                event_type="error",
+                message="Worker did not stop in time and was detached from orchestrator",
+            )
+            await db.commit()
 
     return serialize_domain(domain, masked=False)
 
@@ -298,13 +318,22 @@ async def delete_domain(
     domain_id: int,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_feature_access),
+    user: User = Depends(get_current_user),
 ) -> MessageResponse:
     domain = await db.get(Domain, domain_id)
     if domain is None or domain.owner_id != user.id:
         raise HTTPException(status_code=404, detail="Domain not found")
+    domain_name = domain.domain
 
-    await get_monitoring(request).stop_domain(domain.id)
+    detached = await get_monitoring(request).stop_domain(domain.id)
+    if detached:
+        await add_log(
+            db,
+            owner_id=user.id,
+            domain_id=None,
+            event_type="error",
+            message=f"Worker for {domain_name} did not stop in time before deletion and was detached from orchestrator",
+        )
     await db.delete(domain)
     await db.commit()
     return MessageResponse(detail="Domain deleted")

@@ -48,19 +48,36 @@ class CheckOutcome:
 
 
 async def dns_check(domain: str, settings: Settings) -> DnsSignal:
-    try:
-        resolver = dns.asyncresolver.Resolver()
-        resolver.timeout = settings.dns_timeout_seconds
-        resolver.lifetime = settings.dns_timeout_seconds
-        await resolver.resolve(domain, "NS", lifetime=settings.dns_timeout_seconds)
-        return DnsSignal.EXISTS
-    except dns.resolver.NXDOMAIN:
-        return DnsSignal.NXDOMAIN
-    except dns.resolver.NoAnswer:
-        return DnsSignal.EXISTS
-    except Exception:
-        logger.exception("DNS check failed for %s", domain)
-        return DnsSignal.ERROR
+    errors: list[str] = []
+    resolver_pool: list[tuple[str, dns.asyncresolver.Resolver]] = []
+
+    system_resolver = dns.asyncresolver.Resolver()
+    system_resolver.timeout = settings.dns_timeout_seconds
+    system_resolver.lifetime = settings.dns_timeout_seconds
+    resolver_pool.append(("system", system_resolver))
+
+    fallback_nameservers = settings.dns_fallback_nameserver_list
+    if fallback_nameservers:
+        fallback_resolver = dns.asyncresolver.Resolver(configure=False)
+        fallback_resolver.nameservers = fallback_nameservers
+        fallback_resolver.timeout = settings.dns_timeout_seconds
+        fallback_resolver.lifetime = settings.dns_timeout_seconds
+        resolver_pool.append(("fallback", fallback_resolver))
+
+    for resolver_name, resolver in resolver_pool:
+        for record_type in ("NS", "SOA"):
+            try:
+                await resolver.resolve(domain, record_type, lifetime=settings.dns_timeout_seconds)
+                return DnsSignal.EXISTS
+            except dns.resolver.NXDOMAIN:
+                return DnsSignal.NXDOMAIN
+            except dns.resolver.NoAnswer:
+                return DnsSignal.EXISTS
+            except Exception as exc:
+                errors.append(f"{resolver_name}:{record_type}:{type(exc).__name__}:{exc}")
+
+    logger.warning("DNS check failed for %s: %s", domain, " | ".join(errors))
+    return DnsSignal.ERROR
 
 
 async def rdap_check(

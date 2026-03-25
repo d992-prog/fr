@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.core.config import Settings
 from app.db.base import utcnow
 from app.db.models import Domain, Proxy, User
+from app.services.app_settings import get_diagnostic_telegram_settings
 from app.services.logs import add_log
 from app.services.notifier import TelegramNotifier
 from app.services.security import user_has_feature_access
@@ -59,12 +60,10 @@ class MonitoringOrchestrator:
     async def shutdown(self) -> None:
         self._stopping = True
         async with self._lock:
-            tasks = [state.task for state in self._workers.values()]
+            tasks = [(domain_id, state.task) for domain_id, state in self._workers.items()]
             self._workers.clear()
-        for task in tasks:
-            task.cancel()
-        if tasks:
-            await asyncio.gather(*tasks, return_exceptions=True)
+        for domain_id, task in tasks:
+            await self._cancel_worker_task(domain_id, task, reason="shutdown")
         for service_task in (self._proxy_revival_task, self._supervisor_task):
             if service_task:
                 service_task.cancel()
@@ -74,12 +73,12 @@ class MonitoringOrchestrator:
         async with self._lock:
             await self._start_worker_locked(domain_id)
 
-    async def stop_domain(self, domain_id: int) -> None:
+    async def stop_domain(self, domain_id: int) -> bool:
         async with self._lock:
             state = self._workers.pop(domain_id, None)
         if state:
-            state.task.cancel()
-            await asyncio.gather(state.task, return_exceptions=True)
+            return await self._cancel_worker_task(domain_id, state.task, reason="manual stop")
+        return False
 
     def worker_count(self) -> int:
         return len(self._workers)
@@ -98,12 +97,40 @@ class MonitoringOrchestrator:
             sleeping_until=None,
         )
 
+    async def _cancel_worker_task(
+        self,
+        domain_id: int,
+        task: asyncio.Task[None],
+        *,
+        reason: str,
+        timeout: float = 2.0,
+    ) -> bool:
+        task.cancel()
+        try:
+            await asyncio.wait_for(task, timeout=timeout)
+            return False
+        except asyncio.CancelledError:
+            return False
+        except asyncio.TimeoutError:
+            logger.error(
+                "Worker for domain %s did not stop within %.1fs during %s; detaching task",
+                domain_id,
+                timeout,
+                reason,
+            )
+            return True
+        except Exception:
+            logger.exception("Worker for domain %s raised while stopping during %s", domain_id, reason)
+            return False
+
     async def _restart_worker(self, domain_id: int, *, reason: str) -> None:
+        existing: WorkerState | None = None
         async with self._lock:
-            state = self._workers.get(domain_id)
-            if state:
-                state.task.cancel()
-                await asyncio.gather(state.task, return_exceptions=True)
+            existing = self._workers.get(domain_id)
+        detached = False
+        if existing:
+            detached = await self._cancel_worker_task(domain_id, existing.task, reason=reason)
+        async with self._lock:
             task = asyncio.create_task(self._worker_loop(domain_id))
             now = asyncio.get_running_loop().time()
             self._workers[domain_id] = WorkerState(
@@ -114,13 +141,27 @@ class MonitoringOrchestrator:
             )
 
         async with self.session_factory() as session:
+            domain = await session.get(Domain, domain_id)
             await add_log(
                 session,
                 domain_id=domain_id,
                 event_type="error",
-                message=f"Worker restarted automatically: {reason}",
+                message=(
+                    f"Worker restarted automatically: {reason}"
+                    + ("; previous task did not stop in time" if detached else "")
+                ),
             )
             await session.commit()
+            await self._send_diagnostic_alert(
+                session,
+                title="Worker restarted",
+                details=(
+                    f"domain_id={domain_id}\n"
+                    f"domain={domain.domain if domain else 'unknown'}\n"
+                    f"reason={reason}\n"
+                    f"detached_previous_task={detached}"
+                ),
+            )
 
     def _heartbeat(self, domain_id: int) -> None:
         state = self._workers.get(domain_id)
@@ -235,6 +276,7 @@ class MonitoringOrchestrator:
             rdap_result = outcome.effective_rdap
             previous_owner = domain.last_seen_owner
             previous_status = domain.last_seen_rdap_status
+            previous_error = domain.last_error
 
             snapshot_log = self._build_snapshot_log(domain.domain, previous_owner, previous_status, rdap_result)
             if snapshot_log:
@@ -284,6 +326,14 @@ class MonitoringOrchestrator:
                     event_type=decision.log_type,
                     message=decision.log_message,
                 )
+            elif decision.last_error and decision.last_error != previous_error:
+                await add_log(
+                    session,
+                    owner_id=domain.owner_id,
+                    domain_id=domain.id,
+                    event_type="error" if decision.status == "error" else "info",
+                    message=decision.log_message,
+                )
 
             await session.commit()
             domain_name = domain.domain
@@ -328,6 +378,16 @@ class MonitoringOrchestrator:
                 )
 
             await session.commit()
+            if domain.consecutive_failures in {3, 5, 10}:
+                await self._send_diagnostic_alert(
+                    session,
+                    title="Repeated worker failures",
+                    details=(
+                        f"domain={domain.domain}\n"
+                        f"consecutive_failures={domain.consecutive_failures}\n"
+                        f"message={message}"
+                    ),
+                )
             return runtime.interval
 
     async def _run_proxy_fallback(
@@ -390,10 +450,31 @@ class MonitoringOrchestrator:
         status_changed = previous_status != rdap_result.registration_status
         if not owner_changed and not status_changed:
             return None
-        return (
-            f"Registration snapshot changed for {domain_name}: "
-            f"owner {previous_owner or 'unknown'} -> {rdap_result.owner or 'unknown'}, "
-            f"status {previous_status or 'unknown'} -> {rdap_result.registration_status or 'unknown'}"
+        parts: list[str] = []
+        if owner_changed:
+            parts.append(f"owner {previous_owner or 'unknown'} -> {rdap_result.owner or 'unknown'}")
+        if status_changed:
+            parts.append(
+                "RDAP status "
+                f"{previous_status or 'unknown'} -> {rdap_result.registration_status or 'unknown'}"
+            )
+        return f"Registration snapshot changed for {domain_name}: " + "; ".join(parts)
+
+    async def _send_diagnostic_alert(
+        self,
+        session: AsyncSession,
+        *,
+        title: str,
+        details: str,
+    ) -> None:
+        token, chat_id = await get_diagnostic_telegram_settings(session)
+        if not token or not chat_id:
+            return
+        await self.notifier.send_diagnostic(
+            title,
+            details,
+            token=token,
+            chat_id=chat_id,
         )
 
     async def _proxy_revival_loop(self) -> None:
