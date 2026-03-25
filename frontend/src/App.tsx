@@ -95,15 +95,17 @@ function formatPreciseDate(value: string | null, language: Language) {
   if (!value) {
     return language === "ru" ? "Нет данных" : "No data";
   }
-  return new Intl.DateTimeFormat(language === "ru" ? "ru-RU" : "en-US", {
+  const date = new Date(value);
+  const base = new Intl.DateTimeFormat(language === "ru" ? "ru-RU" : "en-US", {
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
-    fractionalSecondDigits: 3,
-  }).format(new Date(value));
+  }).format(date);
+  const milliseconds = String(date.getMilliseconds()).padStart(3, "0");
+  return `${base}.${milliseconds}`;
 }
 
 function formatRemaining(value: string | null, language: Language) {
@@ -279,6 +281,7 @@ export default function App() {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [monitoringHealth, setMonitoringHealth] = useState<MonitoringHealth | null>(null);
   const [domainDrafts, setDomainDrafts] = useState<Record<number, DomainDraft>>({});
+  const [expandedSettings, setExpandedSettings] = useState<Record<number, boolean>>({});
 
   const [adminUsers, setAdminUsers] = useState<AdminUser[]>([]);
   const [promoCodes, setPromoCodes] = useState<PromoCode[]>([]);
@@ -441,7 +444,7 @@ export default function App() {
     };
 
     void load();
-    const timer = window.setInterval(load, 5000);
+    const timer = window.setInterval(load, 10000);
     return () => {
       ignore = true;
       window.clearInterval(timer);
@@ -521,6 +524,13 @@ export default function App() {
         ...(current[domainId] ?? DEFAULT_NEW_DOMAIN_SETTINGS),
         [key]: value,
       },
+    }));
+  }
+
+  function toggleSettings(domainId: number) {
+    setExpandedSettings((current) => ({
+      ...current,
+      [domainId]: !current[domainId],
     }));
   }
 
@@ -852,13 +862,7 @@ export default function App() {
       <div className="domain-settings">
         <div className="card-head compact-head">
           <div>
-            <h3>{l("Настройки этого домена", "This domain settings")}</h3>
-            <span className="muted">
-              {l(
-                "Этот блок меняет только текущий домен. Значения из правой панели добавления новых доменов сюда не применяются автоматически.",
-                "This editor affects only the current domain. Values from the new-domain panel do not apply here automatically.",
-              )}
-            </span>
+            <h3>{l("Настройки домена", "Domain settings")}</h3>
           </div>
         </div>
         <div className="form two-columns">
@@ -974,6 +978,7 @@ export default function App() {
   function renderDomainCard(domain: Domain) {
     const health = domainHealth.get(domain.id);
     const interval = currentInterval(domain);
+    const settingsOpen = !!expandedSettings[domain.id];
 
     return (
       <article key={domain.id} className="domain-card card">
@@ -986,12 +991,11 @@ export default function App() {
               <span className={STATUS_CLASS[domain.scheduler_mode] ?? "status"}>{schedulerModeLabel(domain.scheduler_mode, language)}</span>
               {health?.is_stale ? <span className="status error">{l("Воркер застыл", "Worker is stale")}</span> : null}
             </div>
-            <p className="muted domain-explainer">
-              {l(
-                "В карточке отдельно видно: стратегия домена, текущий runtime-режим, реально применяемый интервал и черновик настроек, который вступит в силу только после кнопки Применить настройки.",
-                "This card separates the domain strategy, current runtime mode, actually applied interval, and the draft settings that only take effect after Apply settings.",
-              )}
-            </p>
+            <div className="domain-summary-line">
+              <span>{l("Последняя проверка", "Last check")}: {formatPreciseDate(domain.last_check_at, language)}</span>
+              <span>{l("Сейчас применяется", "Applied now")}: {formatSeconds(interval.seconds, language, interval.approximate)}</span>
+              <span>{l("Подтверждения", "Confirmations")}: {domain.available_confirmations}/{domain.confirmation_threshold}</span>
+            </div>
           </div>
 
           <div className="actions wrap">
@@ -1024,6 +1028,9 @@ export default function App() {
                   : l("Включить медленное наблюдение", "Enable slow recheck")}
               </button>
             ) : null}
+            <button type="button" className="ghost" onClick={() => toggleSettings(domain.id)}>
+              {settingsOpen ? l("Скрыть настройки", "Hide settings") : l("Показать настройки", "Show settings")}
+            </button>
             <button type="button" className="danger" onClick={() => void removeDomain(domain.id)} disabled={!canUseFeatures}>
               {l("Удалить домен", "Delete domain")}
             </button>
@@ -1032,30 +1039,20 @@ export default function App() {
 
         <div className="domain-metrics">
           <div>
-            <span>{l("Что применяется сейчас", "Applied right now")}</span>
-            <strong>{formatSeconds(interval.seconds, language, interval.approximate)}</strong>
+            <span>{l("Текущий runtime-режим", "Current runtime mode")}</span>
+            <strong>{runtimeModeLabel(domain.check_mode, language)}</strong>
           </div>
           <div>
             <span>{l("Стратегия домена", "Domain strategy")}</span>
             <strong>{schedulerModeLabel(domain.scheduler_mode, language)}</strong>
           </div>
           <div>
-            <span>{l("Текущий runtime-режим", "Current runtime mode")}</span>
-            <strong>{runtimeModeLabel(domain.check_mode, language)}</strong>
-          </div>
-          <div>
-            <span>{l("Подтверждения", "Confirmations")}</span>
-            <strong>
-              {domain.available_confirmations} / {domain.confirmation_threshold}
-            </strong>
-          </div>
-          <div>
-            <span>{l("Последняя проверка", "Last check")}</span>
-            <strong>{formatPreciseDate(domain.last_check_at, language)}</strong>
-          </div>
-          <div>
-            <span>{l("Heartbeat воркера", "Worker heartbeat")}</span>
+            <span>{l("Последний heartbeat", "Last heartbeat")}</span>
             <strong>{formatPreciseDate(domain.worker_heartbeat_at, language)}</strong>
+          </div>
+          <div>
+            <span>{l("Последний владелец", "Last owner")}</span>
+            <strong>{domain.last_seen_owner ?? l("Нет данных", "No data")}</strong>
           </div>
           <div>
             <span>{l("Подтвержден как доступный", "Confirmed available at")}</span>
@@ -1067,40 +1064,17 @@ export default function App() {
           </div>
         </div>
 
-        <div className="domain-snapshot-grid">
-          <div className="snapshot-box">
-            <span>{l("Последний RDAP статус", "Last RDAP status")}</span>
-            <strong>{domain.last_seen_rdap_status ?? l("Нет данных", "No data")}</strong>
-          </div>
-          <div className="snapshot-box">
-            <span>{l("Последний владелец", "Last seen owner")}</span>
-            <strong>{domain.last_seen_owner ?? l("Нет данных", "No data")}</strong>
-          </div>
-          <div className="snapshot-box">
-            <span>{l("После доступности", "After availability")}</span>
-            <strong>
-              {domain.available_recheck_enabled
-                ? l("Будет медленное наблюдение", "Will continue slow recheck")
-                : l("Мониторинг будет остановлен", "Monitoring will stop")}
-            </strong>
-          </div>
-          <div className="snapshot-box">
-            <span>{l("Интервал наблюдения после освобождения", "Post-availability interval")}</span>
-            <strong>{formatSeconds(domain.available_recheck_interval, language)}</strong>
-          </div>
-        </div>
-
         {domain.last_error ? <div className="inline-alert error">{domain.last_error}</div> : null}
         {health?.is_stale ? (
           <div className="inline-alert error">
             {l(
-              "Этот домен отмечен как застывший. Watchdog должен перезапустить его автоматически, но карточка уже показывает проблему явно.",
-              "This domain is marked as stale. The watchdog should restart it automatically, but the problem is also shown here explicitly.",
+              "Этот домен выглядит проблемным. После фикса watchdog больше не должен помечать медленные циклы как зависшие, но если статус не исчезнет, значит уже нужно смотреть логи сервиса.",
+              "This domain looks problematic. After the watchdog fix, slow cycles should no longer be marked stale, so if this badge remains, service logs need inspection.",
             )}
           </div>
         ) : null}
 
-        {renderDomainSettingsEditor(domain)}
+        {settingsOpen ? renderDomainSettingsEditor(domain) : null}
       </article>
     );
   }

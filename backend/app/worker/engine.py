@@ -25,6 +25,7 @@ class WorkerState:
     task: asyncio.Task[None]
     last_heartbeat: float
     started_at: float
+    sleeping_until: float | None = None
 
 
 class MonitoringOrchestrator:
@@ -90,7 +91,12 @@ class MonitoringOrchestrator:
             return
         task = asyncio.create_task(self._worker_loop(domain_id))
         now = asyncio.get_running_loop().time()
-        self._workers[domain_id] = WorkerState(task=task, last_heartbeat=now, started_at=now)
+        self._workers[domain_id] = WorkerState(
+            task=task,
+            last_heartbeat=now,
+            started_at=now,
+            sleeping_until=None,
+        )
 
     async def _restart_worker(self, domain_id: int, *, reason: str) -> None:
         async with self._lock:
@@ -100,7 +106,12 @@ class MonitoringOrchestrator:
                 await asyncio.gather(state.task, return_exceptions=True)
             task = asyncio.create_task(self._worker_loop(domain_id))
             now = asyncio.get_running_loop().time()
-            self._workers[domain_id] = WorkerState(task=task, last_heartbeat=now, started_at=now)
+            self._workers[domain_id] = WorkerState(
+                task=task,
+                last_heartbeat=now,
+                started_at=now,
+                sleeping_until=None,
+            )
 
         async with self.session_factory() as session:
             await add_log(
@@ -115,6 +126,12 @@ class MonitoringOrchestrator:
         state = self._workers.get(domain_id)
         if state:
             state.last_heartbeat = asyncio.get_running_loop().time()
+            state.sleeping_until = None
+
+    def _mark_sleep(self, domain_id: int, interval: float) -> None:
+        state = self._workers.get(domain_id)
+        if state:
+            state.sleeping_until = asyncio.get_running_loop().time() + max(0.0, interval)
 
     async def _worker_loop(self, domain_id: int) -> None:
         logger.info("Worker started for domain %s", domain_id)
@@ -125,6 +142,7 @@ class MonitoringOrchestrator:
                 if not await self._should_continue(domain_id):
                     break
                 self._heartbeat(domain_id)
+                self._mark_sleep(domain_id, interval)
                 await asyncio.sleep(interval)
         except asyncio.CancelledError:
             logger.info("Worker cancelled for domain %s", domain_id)
@@ -412,6 +430,8 @@ class MonitoringOrchestrator:
                         continue
                     if state.task.done():
                         await self._restart_worker(domain_id, reason="task finished unexpectedly")
+                        continue
+                    if state.sleeping_until is not None and now <= state.sleeping_until + 5:
                         continue
                     if now - state.last_heartbeat > self.settings.worker_stall_threshold_seconds:
                         await self._restart_worker(domain_id, reason="heartbeat stalled")

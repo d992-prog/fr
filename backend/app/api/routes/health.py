@@ -3,6 +3,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
+from app.worker.scheduling import resolve_runtime_schedule
 from app.db.base import utcnow
 from app.db.models import Domain, User
 from app.db.session import get_db
@@ -36,7 +37,12 @@ async def monitoring_health(
         stale = False
         if domain.worker_heartbeat_at is not None:
             age = (now - domain.worker_heartbeat_at).total_seconds()
-            stale = age > settings.worker_stall_threshold_seconds
+            expected_interval = resolve_runtime_schedule(domain, domain.check_mode, now).interval
+            allowed_age = max(
+                float(settings.worker_stall_threshold_seconds),
+                float(expected_interval) + 10.0,
+            )
+            stale = age > allowed_age
         items.append(
             DomainHealthItem(
                 domain_id=domain.id,
