@@ -1232,9 +1232,9 @@ export default function App() {
       <div className="domain-settings">
         <div className="card-head compact-head">
           <div>
-            <h3>{l("РќР°СЃС‚СЂРѕР№РєРё РґРѕРјРµРЅР°", "Domain settings")}</h3>
+            <h3>{l("Настройки домена", "Domain settings")}</h3>
             <span className={hasChanges ? "status checking" : "status available"}>
-              {hasChanges ? l("Р•СЃС‚СЊ С‡РµСЂРЅРѕРІРёРє", "Unsaved draft") : l("РЎРѕС…СЂР°РЅРµРЅРѕ", "Saved")}
+              {hasChanges ? l("Есть черновик", "Unsaved draft") : l("Сохранено", "Saved")}
             </span>
           </div>
         </div>
@@ -1244,7 +1244,7 @@ export default function App() {
             <>
               <div className="wide-input">
                 {renderField(
-                  "Р РµР¶РёРј РјРѕРЅРёС‚РѕСЂРёРЅРіР°",
+                  "Режим мониторинга",
                   "Monitoring mode",
                   <div className="segmented-control">
                     <button
@@ -1252,21 +1252,21 @@ export default function App() {
                       className={draft.scheduler_mode === "continuous" ? "ghost active-chip" : "ghost"}
                       onClick={() => updateDomainDraft(domain.id, "scheduler_mode", "continuous")}
                     >
-                      {l("РџРѕСЃС‚РѕСЏРЅРЅС‹Р№", "Continuous")}
+                      {l("Постоянный", "Continuous")}
                     </button>
                     <button
                       type="button"
                       className={draft.scheduler_mode === "pattern" ? "ghost active-chip" : "ghost"}
                       onClick={() => updateDomainDraft(domain.id, "scheduler_mode", "pattern")}
                     >
-                      {l("РџРѕ РѕРєРЅСѓ РґСЂРѕРїР°", "Drop window")}
+                      {l("По окну дропа", "Drop window")}
                     </button>
                   </div>,
                 )}
               </div>
 
               {renderField(
-                "РџРѕРґС‚РІРµСЂР¶РґРµРЅРёР№ РґРѕ СЃС‚Р°С‚СѓСЃР° Р”РѕСЃС‚СѓРїРµРЅ",
+                "Подтверждений до статуса Доступен",
                 "Confirmations before Available",
                 <input
                   value={draft.confirmation_threshold}
@@ -1276,7 +1276,7 @@ export default function App() {
 
               {draft.scheduler_mode === "continuous"
                 ? renderField(
-                    "РРЅС‚РµСЂРІР°Р» РїСЂРѕРІРµСЂРєРё, СЃРµРє",
+                    "Интервал проверки, сек",
                     "Check interval, sec",
                     <input
                       value={draft.check_interval}
@@ -1288,7 +1288,7 @@ export default function App() {
               {draft.scheduler_mode === "pattern" ? (
                 <>
                   {renderField(
-                    "РРЅС‚РµСЂРІР°Р» РІРЅРµ РѕРєРЅР°, СЃРµРє",
+                    "Интервал вне окна, сек",
                     "Outside window interval, sec",
                     <input
                       value={draft.pattern_slow_interval}
@@ -1296,7 +1296,7 @@ export default function App() {
                     />,
                   )}
                   {renderField(
-                    "РРЅС‚РµСЂРІР°Р» РІ РѕРєРЅРµ, СЃРµРє",
+                    "Интервал в окне, сек",
                     "Inside window interval, sec",
                     <input
                       value={draft.pattern_fast_interval}
@@ -1304,7 +1304,7 @@ export default function App() {
                     />,
                   )}
                   {renderField(
-                    "РЎС‚Р°СЂС‚ РѕРєРЅР°, РјРёРЅСѓС‚Р° С‡Р°СЃР°",
+                    "Старт окна, минута часа",
                     "Window start minute",
                     <input
                       value={draft.pattern_window_start_minute}
@@ -1312,7 +1312,7 @@ export default function App() {
                     />,
                   )}
                   {renderField(
-                    "РљРѕРЅРµС† РѕРєРЅР°, РјРёРЅСѓС‚Р° С‡Р°СЃР°",
+                    "Конец окна, минута часа",
                     "Window end minute",
                     <input
                       value={draft.pattern_window_end_minute}
@@ -1326,7 +1326,7 @@ export default function App() {
 
           <div className="wide-input">
             {renderField(
-              "РќР°Р±Р»СЋРґР°С‚СЊ РїРѕСЃР»Рµ РѕСЃРІРѕР±РѕР¶РґРµРЅРёСЏ",
+              "Наблюдать после освобождения",
               "Observe after availability",
               <div className="segmented-control">
                 <button
@@ -1334,14 +1334,14 @@ export default function App() {
                   className={draft.available_recheck_enabled ? "ghost active-chip" : "ghost"}
                   onClick={() => updateDomainDraft(domain.id, "available_recheck_enabled", true)}
                 >
-                  {l("Р”Р°", "Yes")}
+                  {l("Да", "Yes")}
                 </button>
                 <button
                   type="button"
                   className={!draft.available_recheck_enabled ? "ghost active-chip" : "ghost"}
                   onClick={() => updateDomainDraft(domain.id, "available_recheck_enabled", false)}
                 >
-                  {l("РќРµС‚", "No")}
+                  {l("Нет", "No")}
                 </button>
               </div>,
             )}
@@ -1349,13 +1349,13 @@ export default function App() {
 
           {draft.available_recheck_enabled
             ? renderField(
-                "РРЅС‚РµСЂРІР°Р» РЅР°Р±Р»СЋРґРµРЅРёСЏ РїРѕСЃР»Рµ РѕСЃРІРѕР±РѕР¶РґРµРЅРёСЏ, СЃРµРє",
+                "Интервал наблюдения после освобождения, сек",
                 "Post-availability recheck interval, sec",
                 <input
                   value={draft.available_recheck_interval}
                   onChange={(event) => updateDomainDraft(domain.id, "available_recheck_interval", event.target.value)}
                 />,
-                "РќР°РїСЂРёРјРµСЂ 1800 СЃРµРєСѓРЅРґ = 30 РјРёРЅСѓС‚.",
+                "Например 1800 секунд = 30 минут.",
                 "For example, 1800 seconds = 30 minutes.",
               )
             : null}
@@ -1363,10 +1363,10 @@ export default function App() {
 
         <div className="actions">
           <button type="button" onClick={() => void applyDomainSettings(domain)} disabled={!canUseFeatures || !hasChanges}>
-            {l("РџСЂРёРјРµРЅРёС‚СЊ РЅР°СЃС‚СЂРѕР№РєРё", "Apply settings")}
+            {l("Применить настройки", "Apply settings")}
           </button>
           <button type="button" className="ghost" onClick={() => resetDomainSettings(domain)} disabled={!hasChanges}>
-            {l("Р’РѕСЃСЃС‚Р°РЅРѕРІРёС‚СЊ СЃРѕС…СЂР°РЅРµРЅРЅРѕРµ", "Restore saved values")}
+            {l("Восстановить сохраненное", "Restore saved values")}
           </button>
         </div>
       </div>
@@ -1388,22 +1388,22 @@ export default function App() {
             <div className="domain-title-row">
               <h3>{domain.domain}</h3>
               <span className={STATUS_CLASS[domain.status] ?? "status"}>{statusLabel(domain.status, language)}</span>
-              {health?.is_stale ? <span className="status error">{l("Р’РѕСЂРєРµСЂ Р·Р°СЃС‚С‹Р»", "Worker is stale")}</span> : null}
-              {hasChanges ? <span className="status checking">{l("Р•СЃС‚СЊ С‡РµСЂРЅРѕРІРёРє", "Unsaved draft")}</span> : null}
+              {health?.is_stale ? <span className="status error">{l("Воркер застыл", "Worker is stale")}</span> : null}
+              {hasChanges ? <span className="status checking">{l("Есть черновик", "Unsaved draft")}</span> : null}
             </div>
             <div className="domain-summary-line">
-              <span>{l("РџРѕСЃР»РµРґРЅСЏСЏ РїСЂРѕРІРµСЂРєР°", "Last check")}: {formatPreciseDate(domain.last_check_at, language)}</span>
-              <span>{l("РЎРµР№С‡Р°СЃ", "Now")}: {runtimeModeLabel(domain.check_mode, language)}</span>
-              <span>{l("РЎРµР№С‡Р°СЃ РїСЂРёРјРµРЅСЏРµС‚СЃСЏ", "Applied now")}: {formatSeconds(interval.seconds, language, interval.approximate)}</span>
+              <span>{l("Последняя проверка", "Last check")}: {formatPreciseDate(domain.last_check_at, language)}</span>
+              <span>{l("Сейчас", "Now")}: {runtimeModeLabel(domain.check_mode, language)}</span>
+              <span>{l("Сейчас применяется", "Applied now")}: {formatSeconds(interval.seconds, language, interval.approximate)}</span>
               {!observationOnly ? (
-                <span>{l("РџРѕРґС‚РІРµСЂР¶РґРµРЅРёСЏ", "Confirmations")}: {domain.available_confirmations}/{domain.confirmation_threshold}</span>
+                <span>{l("Подтверждения", "Confirmations")}: {domain.available_confirmations}/{domain.confirmation_threshold}</span>
               ) : null}
             </div>
           </div>
 
           <div className="actions wrap">
             <button type="button" onClick={() => void toggleDomain(domain)} disabled={!canUseFeatures}>
-              {domain.is_active ? l("РћСЃС‚Р°РЅРѕРІРёС‚СЊ РјРѕРЅРёС‚РѕСЂРёРЅРі", "Pause monitoring") : l("Р’РѕР·РѕР±РЅРѕРІРёС‚СЊ РјРѕРЅРёС‚РѕСЂРёРЅРі", "Resume monitoring")}
+              {domain.is_active ? l("Остановить мониторинг", "Pause monitoring") : l("Возобновить мониторинг", "Resume monitoring")}
             </button>
             {!observationOnly ? (
               <div className="segmented-control compact">
@@ -1413,7 +1413,7 @@ export default function App() {
                   onClick={() => void switchSchedulerMode(domain, "continuous")}
                   disabled={!canUseFeatures}
                 >
-                  {l("РџРѕСЃС‚РѕСЏРЅРЅС‹Р№", "Continuous")}
+                  {l("Постоянный", "Continuous")}
                 </button>
                 <button
                   type="button"
@@ -1421,34 +1421,34 @@ export default function App() {
                   onClick={() => void switchSchedulerMode(domain, "pattern")}
                   disabled={!canUseFeatures}
                 >
-                  {l("РџРѕ РѕРєРЅСѓ", "Window")}
+                  {l("По окну", "Window")}
                 </button>
               </div>
             ) : null}
             <button type="button" className="ghost" onClick={() => toggleSettings(domain.id)}>
-              {settingsOpen ? l("РЎРєСЂС‹С‚СЊ РЅР°СЃС‚СЂРѕР№РєРё", "Hide settings") : l("РџРѕРєР°Р·Р°С‚СЊ РЅР°СЃС‚СЂРѕР№РєРё", "Show settings")}
+              {settingsOpen ? l("Скрыть настройки", "Hide settings") : l("Показать настройки", "Show settings")}
             </button>
             <button type="button" className="danger" onClick={() => void removeDomain(domain.id)} disabled={!canUseFeatures}>
-              {l("РЈРґР°Р»РёС‚СЊ РґРѕРјРµРЅ", "Delete domain")}
+              {l("Удалить домен", "Delete domain")}
             </button>
           </div>
         </div>
 
         <div className="domain-metrics compact-grid">
           <div>
-            <span>{l("РџРѕСЃР»РµРґРЅРёР№ РІР»Р°РґРµР»РµС†", "Last owner")}</span>
-            <strong>{domain.last_seen_owner ?? l("РќРµС‚ РґР°РЅРЅС‹С…", "No data")}</strong>
+            <span>{l("Последний владелец", "Last owner")}</span>
+            <strong>{domain.last_seen_owner ?? l("Нет данных", "No data")}</strong>
           </div>
           <div>
-            <span>{l("РџРѕСЃР»РµРґРЅРёР№ RDAP-СЃС‚Р°С‚СѓСЃ", "Last RDAP status")}</span>
-            <strong>{domain.last_seen_rdap_status ?? l("РќРµС‚ РґР°РЅРЅС‹С…", "No data")}</strong>
+            <span>{l("Последний RDAP-статус", "Last RDAP status")}</span>
+            <strong>{domain.last_seen_rdap_status ?? l("Нет данных", "No data")}</strong>
           </div>
           <div>
-            <span>{l("РџРѕРґС‚РІРµСЂР¶РґРµРЅ РєР°Рє РґРѕСЃС‚СѓРїРЅС‹Р№", "Confirmed available at")}</span>
+            <span>{l("Подтвержден как доступный", "Confirmed available at")}</span>
             <strong>{formatPreciseDate(domain.available_at, language)}</strong>
           </div>
           <div>
-            <span>{l("РџРѕСЃР»РµРґРЅСЏСЏ СЃРјРµРЅР° РІР»Р°РґРµР»СЊС†Р°", "Last owner change")}</span>
+            <span>{l("Последняя смена владельца", "Last owner change")}</span>
             <strong>{formatPreciseDate(domain.last_owner_change_at, language)}</strong>
           </div>
         </div>
@@ -1457,7 +1457,7 @@ export default function App() {
         {health?.is_stale ? (
           <div className="inline-alert error">
             {l(
-              "Р’РѕСЂРєРµСЂ РґР»СЏ СЌС‚РѕРіРѕ РґРѕРјРµРЅР° РґР°РІРЅРѕ РЅРµ РѕР±РЅРѕРІР»СЏР» heartbeat. Р•СЃР»Рё Р±РµР№РґР¶ РЅРµ РёСЃС‡РµР·Р°РµС‚, СѓР¶Рµ РЅСѓР¶РЅРѕ СЃРјРѕС‚СЂРµС‚СЊ Р»РѕРіРё СЃРµСЂРІРёСЃР°.",
+              "Воркер для этого домена давно не обновлял heartbeat. Если бейдж не исчезает, уже нужно смотреть логи сервиса.",
               "This worker has not updated its heartbeat for too long. If the badge does not disappear, check service logs.",
             )}
           </div>
@@ -1473,13 +1473,13 @@ export default function App() {
       <div className="card">
         <div className="card-head">
           <div>
-            <h2>{l("РџР°СЂР°РјРµС‚СЂС‹ РґР»СЏ РЅРѕРІС‹С… РґРѕРјРµРЅРѕРІ", "Defaults for new domains")}</h2>
+            <h2>{l("Параметры для новых доменов", "Defaults for new domains")}</h2>
           </div>
         </div>
         <div className="form two-columns">
           <div className="wide-input">
             {renderField(
-              "Р РµР¶РёРј РјРѕРЅРёС‚РѕСЂРёРЅРіР°",
+              "Режим мониторинга",
               "Monitoring mode",
               <div className="segmented-control">
                 <button
@@ -1487,21 +1487,21 @@ export default function App() {
                   className={newDomainSettings.scheduler_mode === "continuous" ? "ghost active-chip" : "ghost"}
                   onClick={() => updateNewDomainSettings("scheduler_mode", "continuous")}
                 >
-                  {l("РџРѕСЃС‚РѕСЏРЅРЅС‹Р№", "Continuous")}
+                  {l("Постоянный", "Continuous")}
                 </button>
                 <button
                   type="button"
                   className={newDomainSettings.scheduler_mode === "pattern" ? "ghost active-chip" : "ghost"}
                   onClick={() => updateNewDomainSettings("scheduler_mode", "pattern")}
                 >
-                  {l("РџРѕ РѕРєРЅСѓ РґСЂРѕРїР°", "Drop window")}
+                  {l("По окну дропа", "Drop window")}
                 </button>
               </div>,
             )}
           </div>
 
           {renderField(
-            "РџРѕРґС‚РІРµСЂР¶РґРµРЅРёР№ РґРѕ СЃС‚Р°С‚СѓСЃР° Р”РѕСЃС‚СѓРїРµРЅ",
+            "Подтверждений до статуса Доступен",
             "Confirmations before Available",
             <input
               value={newDomainSettings.confirmation_threshold}
@@ -1511,7 +1511,7 @@ export default function App() {
 
           {newDomainSettings.scheduler_mode === "continuous"
             ? renderField(
-                "РРЅС‚РµСЂРІР°Р» РїСЂРѕРІРµСЂРєРё, СЃРµРє",
+                "Интервал проверки, сек",
                 "Check interval, sec",
                 <input
                   value={newDomainSettings.check_interval}
@@ -1523,7 +1523,7 @@ export default function App() {
           {newDomainSettings.scheduler_mode === "pattern" ? (
             <>
               {renderField(
-                "РРЅС‚РµСЂРІР°Р» РІРЅРµ РѕРєРЅР°, СЃРµРє",
+                "Интервал вне окна, сек",
                 "Outside window interval, sec",
                 <input
                   value={newDomainSettings.pattern_slow_interval}
@@ -1531,7 +1531,7 @@ export default function App() {
                 />,
               )}
               {renderField(
-                "РРЅС‚РµСЂРІР°Р» РІ РѕРєРЅРµ, СЃРµРє",
+                "Интервал в окне, сек",
                 "Inside window interval, sec",
                 <input
                   value={newDomainSettings.pattern_fast_interval}
@@ -1539,7 +1539,7 @@ export default function App() {
                 />,
               )}
               {renderField(
-                "РЎС‚Р°СЂС‚ РѕРєРЅР°, РјРёРЅСѓС‚Р° С‡Р°СЃР°",
+                "Старт окна, минута часа",
                 "Window start minute",
                 <input
                   value={newDomainSettings.pattern_window_start_minute}
@@ -1547,7 +1547,7 @@ export default function App() {
                 />,
               )}
               {renderField(
-                "РљРѕРЅРµС† РѕРєРЅР°, РјРёРЅСѓС‚Р° С‡Р°СЃР°",
+                "Конец окна, минута часа",
                 "Window end minute",
                 <input
                   value={newDomainSettings.pattern_window_end_minute}
@@ -1559,7 +1559,7 @@ export default function App() {
 
           <div className="wide-input">
             {renderField(
-              "РќР°Р±Р»СЋРґР°С‚СЊ РїРѕСЃР»Рµ РѕСЃРІРѕР±РѕР¶РґРµРЅРёСЏ",
+              "Наблюдать после освобождения",
               "Observe after availability",
               <div className="segmented-control">
                 <button
@@ -1567,14 +1567,14 @@ export default function App() {
                   className={newDomainSettings.available_recheck_enabled ? "ghost active-chip" : "ghost"}
                   onClick={() => updateNewDomainSettings("available_recheck_enabled", true)}
                 >
-                  {l("Р”Р°", "Yes")}
+                  {l("Да", "Yes")}
                 </button>
                 <button
                   type="button"
                   className={!newDomainSettings.available_recheck_enabled ? "ghost active-chip" : "ghost"}
                   onClick={() => updateNewDomainSettings("available_recheck_enabled", false)}
                 >
-                  {l("РќРµС‚", "No")}
+                  {l("Нет", "No")}
                 </button>
               </div>,
             )}
@@ -1582,7 +1582,7 @@ export default function App() {
 
           {newDomainSettings.available_recheck_enabled
             ? renderField(
-                "РРЅС‚РµСЂРІР°Р» РЅР°Р±Р»СЋРґРµРЅРёСЏ РїРѕСЃР»Рµ РѕСЃРІРѕР±РѕР¶РґРµРЅРёСЏ, СЃРµРє",
+                "Интервал наблюдения после освобождения, сек",
                 "Post-availability recheck interval, sec",
                 <input
                   value={newDomainSettings.available_recheck_interval}
