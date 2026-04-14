@@ -7,6 +7,7 @@ class RegisterRequest(BaseModel):
     username: str = Field(min_length=3, max_length=32, pattern=r"^[A-Za-z0-9_-]+$")
     password: str = Field(min_length=6, max_length=128)
     language: str = "ru"
+    timezone: str = Field(default="Europe/Moscow", max_length=64, pattern=r"^[A-Za-z0-9_+\-/]+$")
 
 
 class LoginRequest(BaseModel):
@@ -25,6 +26,11 @@ class TelegramSettingsRequest(BaseModel):
     telegram_chat_id: str | None = None
 
 
+class ProfileSettingsRequest(BaseModel):
+    language: str | None = None
+    timezone: str | None = Field(default=None, max_length=64, pattern=r"^[A-Za-z0-9_+\-/]+$")
+
+
 class PromoApplyRequest(BaseModel):
     code: str
 
@@ -35,6 +41,7 @@ class UserResponse(BaseModel):
     role: str
     status: str
     language: str
+    timezone: str
     max_domains: int | None
     access_expires_at: datetime | None
     status_message: str | None

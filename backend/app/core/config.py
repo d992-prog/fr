@@ -19,6 +19,8 @@ class Settings(BaseSettings):
     owner_login: str = Field(default="france_admin", alias="OWNER_LOGIN")
     owner_password: str = Field(default="", alias="OWNER_PASSWORD")
     rdap_base_url: str = Field(default="https://rdap.nic.fr/domain/", alias="RDAP_BASE_URL")
+    rdap_bootstrap_url: str = Field(default="https://data.iana.org/rdap/dns.json", alias="RDAP_BOOTSTRAP_URL")
+    rdap_bootstrap_timeout_seconds: float = Field(default=5.0, alias="RDAP_BOOTSTRAP_TIMEOUT_SECONDS")
     request_timeout: float = 5.0
     dns_timeout_seconds: float = Field(default=2.5, alias="DNS_TIMEOUT_SECONDS")
     dns_fallback_nameservers: str = Field(default="1.1.1.1,8.8.8.8", alias="DNS_FALLBACK_NAMESERVERS")

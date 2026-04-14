@@ -32,12 +32,18 @@ body {
 
 button,
 input,
-textarea {
+textarea,
+select {
   font: inherit;
 }
 
 button {
   cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 .shell {
@@ -316,6 +322,30 @@ button.danger {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.pagination {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  margin: 12px 0 18px;
+  padding: 12px 14px;
+  border: 1px solid rgba(79, 57, 29, 0.1);
+  border-radius: 16px;
+  background: rgba(255, 250, 242, 0.62);
+}
+
+.pagination-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.pagination select {
+  min-width: 120px;
+  padding: 10px 12px;
 }
 
 .wrap {
@@ -632,6 +662,7 @@ button.danger {
   .form.inline,
   .proxy-row,
   .log-row,
+  .pagination,
   .toolbar,
   .user-card-head,
   .form.two-columns,

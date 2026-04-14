@@ -33,6 +33,16 @@ def test_resolve_runtime_schedule_keeps_continuous_mode():
     assert runtime.interval == 1.5
 
 
+def test_resolve_runtime_schedule_uses_manual_burst():
+    runtime = resolve_runtime_schedule(
+        make_domain(manual_burst=True),
+        "burst",
+        datetime(2026, 3, 23, 14, 10, tzinfo=timezone.utc),
+    )
+    assert runtime.mode == "burst"
+    assert runtime.interval == 0.35
+
+
 def test_resolve_runtime_schedule_uses_pattern_fast_inside_window():
     runtime = resolve_runtime_schedule(
         make_domain(scheduler_mode="pattern"),

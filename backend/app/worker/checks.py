@@ -11,6 +11,7 @@ import httpx
 from app.core.config import Settings
 from app.db.models import Proxy
 from app.services.proxy_utils import build_proxy_url
+from app.worker.registry import resolve_domain_rdap_url
 
 logger = logging.getLogger(__name__)
 
@@ -85,7 +86,11 @@ async def rdap_check(
     settings: Settings,
     proxy: Proxy | None = None,
 ) -> RdapResult:
-    target = f"{settings.rdap_base_url.rstrip('/')}/{domain}"
+    target = await resolve_domain_rdap_url(domain, settings)
+    if target is None:
+        logger.warning("No RDAP endpoint found for %s", domain)
+        return RdapResult(signal=RdapSignal.ERROR)
+
     client_kwargs: dict[str, object] = {
         "timeout": settings.rdap_timeout_seconds,
         "follow_redirects": True,

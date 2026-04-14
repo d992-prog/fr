@@ -1,22 +1,26 @@
-# FR Domain Drop Monitor
+# Domain Drop Monitor
 
-Production-oriented `.fr` drop monitor with:
+Production-oriented domain drop monitor with:
 
 - FastAPI + async SQLAlchemy + PostgreSQL
 - Per-domain asyncio workers with heartbeat supervision and auto-restart
-- DNS + RDAP checks, multi-proxy RDAP fallback, and anti-false-positive confirmations
+- DNS + zone-aware RDAP checks, multi-proxy RDAP fallback, and anti-false-positive confirmations
+- IANA RDAP DNS bootstrap support for public TLDs, with a dedicated `.fr` registry override
 - `pattern` scheduler mode for hourly drop windows
 - Multi-user auth with roles: `owner`, `admin`, `user`
 - Pending approval flow, subscriptions, promo codes, and admin audit logs
 - Per-user isolated domains, proxies, and Telegram settings
-- React dashboard with login/profile/admin UI and RU/EN switch
+- React dashboard with login/profile/admin UI, RU/EN switch, timezone display settings, and paginated lists
 
 ## Main Features
 
 - Every domain runs in its own async worker.
 - Stalled workers are detected and restarted automatically.
 - Outside the drop window, pattern mode can check slowly; inside the window it accelerates.
+- Continuous mode can be restored immediately without waiting for an old drop-window sleep to finish.
+- Domains confirmed as captured after availability are stopped to avoid wasteful checks.
 - If direct RDAP fails, the worker can try several healthy SOCKS5 proxies in one cycle.
+- RDAP bootstrap data is cached in the backend process so frequent checks do not fetch IANA data every cycle.
 - Users only see their own domains and proxies.
 - Users can log in before approval, but actions stay blocked until approval or promo activation.
 - Admins can create users, approve/block them, grant access time, soft-delete/restore them, and create promo codes.
@@ -46,6 +50,7 @@ OWNER_PASSWORD=change-me-owner-password
 ```
 
 Optional Telegram defaults are still present in config, but user-facing alerts now use each user's own bot token/chat ID from the profile page.
+The `.fr` RDAP override remains configurable through `RDAP_BASE_URL`; other zones use IANA RDAP bootstrap by default.
 
 Run the API:
 
@@ -71,6 +76,9 @@ When `frontend/dist` exists, FastAPI serves the built UI automatically.
 - `OWNER_LOGIN`, `OWNER_PASSWORD`: bootstrap the first owner account
 - `SESSION_SECRET_KEY`: session/security secret
 - `SESSION_COOKIE_SECURE`: set `true` after HTTPS is enabled
+- `RDAP_BASE_URL`: explicit `.fr` RDAP domain endpoint override
+- `RDAP_BOOTSTRAP_URL`: IANA RDAP DNS bootstrap JSON URL
+- `RDAP_BOOTSTRAP_TIMEOUT_SECONDS`: timeout for loading the bootstrap registry once per backend process
 - `PATTERN_SLOW_INTERVAL`: default slow check interval outside the drop window
 - `PATTERN_FAST_INTERVAL`: default fast check interval inside the drop window
 - `PATTERN_WINDOW_START_MINUTE`, `PATTERN_WINDOW_END_MINUTE`: hourly window boundaries
@@ -85,6 +93,7 @@ When `frontend/dist` exists, FastAPI serves the built UI automatically.
 - `POST /api/auth/login`
 - `POST /api/auth/logout`
 - `GET /api/auth/me`
+- `POST /api/auth/profile`
 - `POST /api/auth/change-password`
 - `POST /api/auth/telegram`
 - `POST /api/auth/telegram/test`
@@ -152,5 +161,5 @@ Use `deploy/nginx-fr-domain-monitor.conf` as the starting point for the Nginx si
 
 ## Notes
 
-- This workspace does not currently have `python`, `node`, or `npm` on PATH, so runtime verification must be done on the target machine.
+- Server-side timestamps are stored in UTC. The profile timezone setting changes dashboard display only.
 - For HTTPS deployments, place Nginx in front of the app and set `SESSION_COOKIE_SECURE=true`.

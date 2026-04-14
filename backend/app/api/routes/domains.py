@@ -140,7 +140,7 @@ async def create_domain(
         domain = Domain(
             owner_id=user.id,
             domain=normalized,
-            zone="fr",
+            zone=normalized.rsplit(".", 1)[-1],
             status="checking",
             is_active=True,
             manual_burst=False,
@@ -249,6 +249,7 @@ async def update_domain(
     if domain is None or domain.owner_id != user.id:
         raise HTTPException(status_code=404, detail="Domain not found")
 
+    scheduling_changed = False
     if payload.is_active is not None:
         domain.is_active = payload.is_active
         if payload.is_active:
@@ -262,14 +263,20 @@ async def update_domain(
             elif domain.status != "captured":
                 domain.status = "inactive"
     if payload.manual_burst is not None:
+        scheduling_changed = domain.manual_burst != payload.manual_burst
         domain.manual_burst = payload.manual_burst
         domain.check_mode = "burst" if payload.manual_burst else "normal"
     scheduler_mode = validate_scheduler_mode(payload.scheduler_mode)
     if scheduler_mode is not None:
+        scheduling_changed = scheduling_changed or domain.scheduler_mode != scheduler_mode
         domain.scheduler_mode = scheduler_mode
+        if scheduler_mode == "continuous" and domain.status not in {"available", "captured"}:
+            domain.check_mode = "burst" if domain.manual_burst else "normal"
     if payload.check_interval is not None:
+        scheduling_changed = scheduling_changed or domain.check_interval != payload.check_interval
         domain.check_interval = payload.check_interval
     if payload.burst_check_interval is not None:
+        scheduling_changed = scheduling_changed or domain.burst_check_interval != payload.burst_check_interval
         domain.burst_check_interval = payload.burst_check_interval
     if payload.confirmation_threshold is not None:
         domain.confirmation_threshold = payload.confirmation_threshold
@@ -282,12 +289,16 @@ async def update_domain(
     if payload.available_recheck_interval is not None:
         domain.available_recheck_interval = payload.available_recheck_interval
     if payload.pattern_slow_interval is not None:
+        scheduling_changed = scheduling_changed or domain.pattern_slow_interval != payload.pattern_slow_interval
         domain.pattern_slow_interval = payload.pattern_slow_interval
     if payload.pattern_fast_interval is not None:
+        scheduling_changed = scheduling_changed or domain.pattern_fast_interval != payload.pattern_fast_interval
         domain.pattern_fast_interval = payload.pattern_fast_interval
     if payload.pattern_window_start_minute is not None:
+        scheduling_changed = scheduling_changed or domain.pattern_window_start_minute != payload.pattern_window_start_minute
         domain.pattern_window_start_minute = payload.pattern_window_start_minute
     if payload.pattern_window_end_minute is not None:
+        scheduling_changed = scheduling_changed or domain.pattern_window_end_minute != payload.pattern_window_end_minute
         domain.pattern_window_end_minute = payload.pattern_window_end_minute
     if payload.check_mode is not None:
         domain.check_mode = payload.check_mode
@@ -297,6 +308,17 @@ async def update_domain(
 
     monitoring = get_monitoring(request)
     if domain.is_active:
+        if scheduling_changed:
+            detached = await monitoring.stop_domain(domain.id)
+            if detached:
+                await add_log(
+                    db,
+                    owner_id=user.id,
+                    domain_id=domain.id,
+                    event_type="error",
+                    message="Worker did not stop in time while applying scheduling changes",
+                )
+                await db.commit()
         await monitoring.ensure_domain(domain.id)
     else:
         detached = await monitoring.stop_domain(domain.id)

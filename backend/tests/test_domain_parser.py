@@ -5,11 +5,24 @@ def test_normalize_domain_accepts_valid_fr_domain():
     assert normalize_domain("https://Example.FR/path") == "example.fr"
 
 
+def test_normalize_domain_accepts_non_fr_domain():
+    assert normalize_domain("https://Example.COM/path") == "example.com"
+
+
+def test_normalize_domain_accepts_idn_domain_as_alabel():
+    assert normalize_domain("пример.рф") == "xn--e1afmkfd.xn--p1ai"
+
+
+def test_normalize_domain_rejects_invalid_domain():
+    assert normalize_domain("-bad.com") is None
+    assert normalize_domain("localhost") is None
+
+
 def test_extract_domains_from_text_deduplicates_results():
-    content = "alpha.fr\nbeta.fr\nalpha.fr"
-    assert extract_domains_from_text(content) == ["alpha.fr", "beta.fr"]
+    content = "alpha.fr\nbeta.com\nalpha.fr\nпример.рф"
+    assert extract_domains_from_text(content) == ["alpha.fr", "beta.com", "xn--e1afmkfd.xn--p1ai"]
 
 
 def test_extract_domains_from_rows_scans_all_columns():
-    rows = [["name", "target"], ["one", "drop-a.fr"], ["two", "drop-b.fr"]]
-    assert extract_domains_from_rows(rows) == ["drop-a.fr", "drop-b.fr"]
+    rows = [["name", "target"], ["one", "drop-a.fr"], ["two", "drop-b.com"]]
+    assert extract_domains_from_rows(rows) == ["drop-a.fr", "drop-b.com"]
