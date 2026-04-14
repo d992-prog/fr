@@ -26,7 +26,7 @@ def evaluate_domain(
     confirmation_threshold: int,
 ) -> DecisionResult:
     possible_available = dns_signal == DnsSignal.NXDOMAIN and rdap_signal == RdapSignal.NOT_FOUND
-    normal_mode = "normal"
+    normal_mode = "burst" if domain.manual_burst else "normal"
 
     if domain.status == "available":
         if possible_available:

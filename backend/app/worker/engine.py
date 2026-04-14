@@ -304,9 +304,10 @@ class MonitoringOrchestrator:
                 domain.last_owner_change_at = checked_at
 
             should_alert = decision.should_alert and domain.alert_sent_at is None
+            if decision.status == "available" and domain.available_at is None:
+                domain.available_at = checked_at
             if should_alert:
                 domain.alert_sent_at = checked_at
-                domain.available_at = checked_at
             available_reference = domain.available_at or checked_at
             within_capture_watch = (
                 decision.status == "available"

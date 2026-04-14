@@ -93,6 +93,7 @@ export type User = {
   role: string;
   status: string;
   language: string;
+  timezone: string;
   max_domains: number | null;
   access_expires_at: string | null;
   status_message: string | null;
@@ -179,7 +180,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  register: (payload: { username: string; password: string; language: string }) =>
+  register: (payload: { username: string; password: string; language: string; timezone: string }) =>
     request<SessionResponse>("/auth/register", {
       method: "POST",
       body: JSON.stringify(payload),
@@ -193,6 +194,11 @@ export const api = {
   getSession: () => request<SessionResponse>("/auth/me"),
   changePassword: (payload: { current_password: string; new_password: string }) =>
     request<SessionResponse>("/auth/change-password", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  updateProfile: (payload: { language?: string; timezone?: string }) =>
+    request<SessionResponse>("/auth/profile", {
       method: "POST",
       body: JSON.stringify(payload),
     }),
@@ -242,7 +248,7 @@ export const api = {
       body: JSON.stringify(payload),
     }),
   deleteDomain: (id: number) => request<{ detail: string }>(`/domains/${id}`, { method: "DELETE" }),
-  getLogs: () => request<LogEntry[]>("/domains/logs?limit=25"),
+  getLogs: (limit = 200) => request<LogEntry[]>(`/domains/logs?limit=${limit}`),
   getMonitoringHealth: () => request<MonitoringHealth>("/health/monitoring"),
   getProxies: () => request<ProxyEntry[]>("/proxies"),
   createProxy: (proxy_url: string) =>

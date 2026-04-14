@@ -43,6 +43,8 @@ def _seconds_until_window_start(now: datetime, start_minute: int) -> float:
 
 
 def expected_runtime_interval(domain: Domain) -> float:
+    if domain.check_mode == "burst":
+        return max(0.1, domain.burst_check_interval)
     if domain.check_mode in {"capture-watch", "pattern-fast"}:
         return max(0.1, domain.pattern_fast_interval)
     if domain.check_mode == "pattern-slow":
@@ -68,6 +70,12 @@ def resolve_runtime_schedule(domain: Domain, base_mode: str, now: datetime) -> R
         return RuntimeSchedule(
             mode="available-stop",
             interval=max(10.0, domain.available_recheck_interval),
+        )
+
+    if domain.manual_burst or base_mode == "burst":
+        return RuntimeSchedule(
+            mode="burst",
+            interval=max(0.1, domain.burst_check_interval),
         )
 
     if domain.scheduler_mode == "pattern":

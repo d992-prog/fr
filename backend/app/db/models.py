@@ -27,6 +27,7 @@ class User(Base):
     role: Mapped[str] = mapped_column(String(32), default="user", server_default="user")
     status: Mapped[str] = mapped_column(String(32), default="pending", server_default="pending")
     language: Mapped[str] = mapped_column(String(8), default="ru", server_default="ru")
+    timezone: Mapped[str] = mapped_column(String(64), default="Europe/Moscow", server_default="Europe/Moscow")
     max_domains: Mapped[int | None] = mapped_column(Integer, nullable=True)
     access_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     status_message: Mapped[str | None] = mapped_column(Text, nullable=True)

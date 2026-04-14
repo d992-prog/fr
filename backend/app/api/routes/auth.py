@@ -15,6 +15,7 @@ from app.schemas.auth import (
     ChangePasswordRequest,
     LoginRequest,
     PromoApplyRequest,
+    ProfileSettingsRequest,
     RegisterRequest,
     SessionResponse,
     TelegramSettingsRequest,
@@ -48,6 +49,7 @@ def serialize_user(user: User, *, masked: bool) -> UserResponse:
         role=user.role,
         status=user.status,
         language=user.language,
+        timezone=user.timezone,
         max_domains=user.max_domains,
         access_expires_at=user.access_expires_at,
         status_message=user.status_message,
@@ -83,6 +85,7 @@ async def register(
         role="user",
         status="pending",
         language=payload.language if payload.language in {"ru", "en"} else "ru",
+        timezone=payload.timezone,
         status_message=settings.default_pending_message,
     )
     db.add(user)
@@ -146,6 +149,22 @@ async def logout(
 
 @router.get("/me", response_model=SessionResponse)
 async def get_me(user: User = Depends(get_current_user)) -> SessionResponse:
+    return build_session_payload(user)
+
+
+@router.post("/profile", response_model=SessionResponse)
+async def update_profile_settings(
+    payload: ProfileSettingsRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> SessionResponse:
+    if payload.language is not None:
+        user.language = payload.language if payload.language in {"ru", "en"} else user.language
+    if payload.timezone is not None:
+        user.timezone = payload.timezone
+    user.updated_at = utcnow()
+    await db.commit()
+    await db.refresh(user)
     return build_session_payload(user)
 
 

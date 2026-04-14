@@ -1,4 +1,4 @@
-import { FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
+import { Dispatch, FormEvent, ReactNode, SetStateAction, useEffect, useMemo, useState } from "react";
 
 import {
   AdminUser,
@@ -19,6 +19,7 @@ type Toast = { type: "success" | "error"; text: string } | null;
 type Language = "ru" | "en";
 type View = "dashboard" | "profile" | "admin";
 type DomainTab = "all" | "checking" | "available" | "captured" | "error" | "inactive";
+type PageState = { page: number; pageSize: number };
 
 type DomainDraft = {
   scheduler_mode: "continuous" | "pattern";
@@ -62,6 +63,17 @@ const ACCESS_PRESETS = [
   { label: "180d", seconds: 180 * 86_400 },
   { label: "365d", seconds: 365 * 86_400 },
 ];
+const PAGE_SIZE_OPTIONS = [25, 50, 100, 200];
+const TIME_ZONE_OPTIONS = [
+  "Europe/Moscow",
+  "UTC",
+  "Europe/Paris",
+  "Europe/London",
+  "America/New_York",
+  "America/Los_Angeles",
+  "Asia/Dubai",
+  "Asia/Shanghai",
+];
 
 const STATUS_CLASS: Record<string, string> = {
   available: "status available",
@@ -81,6 +93,7 @@ const STATUS_CLASS: Record<string, string> = {
   "available-watch": "status available",
   "available-stop": "status inactive",
   normal: "status checking",
+  burst: "status checking",
   continuous: "status checking",
   pattern: "status inactive",
 };
@@ -92,7 +105,18 @@ function loadStoredLanguage(): Language {
   return window.localStorage.getItem("frdm_language") === "en" ? "en" : "ru";
 }
 
-function formatPreciseDate(value: string | null, language: Language) {
+function loadStoredTimezone() {
+  if (typeof window === "undefined") {
+    return "UTC";
+  }
+  return (
+    window.localStorage.getItem("frdm_timezone") ||
+    Intl.DateTimeFormat().resolvedOptions().timeZone ||
+    "UTC"
+  );
+}
+
+function formatPreciseDate(value: string | null, language: Language, timeZone = loadStoredTimezone()) {
   if (!value) {
     return language === "ru" ? "Нет данных" : "No data";
   }
@@ -104,6 +128,7 @@ function formatPreciseDate(value: string | null, language: Language) {
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
+    timeZone,
   }).format(date);
   const milliseconds = String(date.getMilliseconds()).padStart(3, "0");
   return `${base}.${milliseconds}`;
@@ -151,6 +176,7 @@ function schedulerModeLabel(mode: string, language: Language) {
 function runtimeModeLabel(mode: string, language: Language) {
   const map: Record<string, { ru: string; en: string }> = {
     normal: { ru: "Обычный цикл", en: "Normal cycle" },
+    burst: { ru: "Ускоренный цикл", en: "Burst cycle" },
     "pattern-slow": { ru: "Вне окна дропа", en: "Outside drop window" },
     "pattern-fast": { ru: "Внутри окна дропа", en: "Inside drop window" },
     "capture-watch": { ru: "Быстрое наблюдение после освобождения", en: "Fast watch after release" },
@@ -160,6 +186,17 @@ function runtimeModeLabel(mode: string, language: Language) {
   };
   const label = map[mode];
   return label ? (language === "ru" ? label.ru : label.en) : mode;
+}
+
+function paginate<T>(items: T[], page: number, pageSize: number) {
+  const totalPages = Math.max(1, Math.ceil(items.length / pageSize));
+  const currentPage = Math.min(Math.max(1, page), totalPages);
+  const start = (currentPage - 1) * pageSize;
+  return {
+    items: items.slice(start, start + pageSize),
+    currentPage,
+    totalPages,
+  };
 }
 
 function statusLabel(status: string, language: Language) {
@@ -281,6 +318,7 @@ function healthById(items: MonitoringHealthItem[] | undefined) {
 
 export default function App() {
   const [language, setLanguage] = useState<Language>(loadStoredLanguage);
+  const [selectedTimezone, setSelectedTimezone] = useState(loadStoredTimezone);
   const [session, setSession] = useState<SessionResponse | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [toast, setToast] = useState<Toast>(null);
@@ -294,6 +332,9 @@ export default function App() {
   const [domainDrafts, setDomainDrafts] = useState<Record<number, DomainDraft>>({});
   const [dirtyDomainIds, setDirtyDomainIds] = useState<Record<number, boolean>>({});
   const [expandedSettings, setExpandedSettings] = useState<Record<number, boolean>>({});
+  const [domainPage, setDomainPage] = useState<PageState>({ page: 1, pageSize: 25 });
+  const [proxyPage, setProxyPage] = useState<PageState>({ page: 1, pageSize: 25 });
+  const [logPage, setLogPage] = useState<PageState>({ page: 1, pageSize: 25 });
 
   const [adminUsers, setAdminUsers] = useState<AdminUser[]>([]);
   const [promoCodes, setPromoCodes] = useState<PromoCode[]>([]);
@@ -333,16 +374,33 @@ export default function App() {
   });
 
   const l = (ru: string, en: string) => (language === "ru" ? ru : en);
+  const formatDate = (value: string | null) => formatPreciseDate(value, language, selectedTimezone);
   const isAdmin = session?.user.role === "owner" || session?.user.role === "admin";
   const canUseFeatures = session?.has_feature_access ?? false;
   const activeCount = useMemo(() => domains.filter((item) => item.is_active).length, [domains]);
   const availableCount = useMemo(() => domains.filter((item) => item.status === "available").length, [domains]);
   const capturedCount = useMemo(() => domains.filter((item) => item.status === "captured").length, [domains]);
   const domainHealth = useMemo(() => healthById(monitoringHealth?.items), [monitoringHealth?.items]);
+  const timezoneOptions = useMemo(
+    () => (TIME_ZONE_OPTIONS.includes(selectedTimezone) ? TIME_ZONE_OPTIONS : [selectedTimezone, ...TIME_ZONE_OPTIONS]),
+    [selectedTimezone],
+  );
 
   const filteredDomains = useMemo(
     () => domains.filter((domain) => isDomainInTab(domain, domainTab)),
     [domainTab, domains],
+  );
+  const pagedDomains = useMemo(
+    () => paginate(filteredDomains, domainPage.page, domainPage.pageSize),
+    [domainPage.page, domainPage.pageSize, filteredDomains],
+  );
+  const pagedProxies = useMemo(
+    () => paginate(proxies, proxyPage.page, proxyPage.pageSize),
+    [proxies, proxyPage.page, proxyPage.pageSize],
+  );
+  const pagedLogs = useMemo(
+    () => paginate(logs, logPage.page, logPage.pageSize),
+    [logPage.page, logPage.pageSize, logs],
   );
 
   const tabCounts = useMemo(
@@ -393,6 +451,14 @@ export default function App() {
   }, [language]);
 
   useEffect(() => {
+    window.localStorage.setItem("frdm_timezone", selectedTimezone);
+  }, [selectedTimezone]);
+
+  useEffect(() => {
+    setDomainPage((current) => ({ ...current, page: 1 }));
+  }, [domainTab]);
+
+  useEffect(() => {
     let mounted = true;
     api
       .getSession()
@@ -404,6 +470,7 @@ export default function App() {
         if (!window.localStorage.getItem("frdm_language")) {
           setLanguage(payload.user.language === "en" ? "en" : "ru");
         }
+        setSelectedTimezone(payload.user.timezone || loadStoredTimezone());
         setTelegramForm({
           telegram_token: payload.user.telegram_token ?? "",
           telegram_chat_id: payload.user.telegram_chat_id ?? "",
@@ -520,6 +587,7 @@ export default function App() {
 
   function syncSession(payload: SessionResponse) {
     setSession(payload);
+    setSelectedTimezone(payload.user.timezone || loadStoredTimezone());
     setTelegramForm({
       telegram_token: payload.user.telegram_token ?? "",
       telegram_chat_id: payload.user.telegram_chat_id ?? "",
@@ -575,6 +643,7 @@ export default function App() {
         username: registerForm.username,
         password: registerForm.password,
         language,
+        timezone: selectedTimezone,
       });
       syncSession(payload);
     }, l("Аккаунт создан", "Account created"));
@@ -774,6 +843,14 @@ export default function App() {
       const payload = await api.updateTelegram(telegramForm);
       syncSession(payload);
     }, l("Данные Telegram сохранены", "Telegram settings saved"));
+  }
+
+  async function saveProfileSettings(event: FormEvent) {
+    event.preventDefault();
+    await runAction(async () => {
+      const payload = await api.updateProfile({ language, timezone: selectedTimezone });
+      syncSession(payload);
+    }, l("Настройки профиля сохранены", "Profile settings saved"));
   }
 
   async function testTelegram() {
@@ -1052,7 +1129,7 @@ export default function App() {
               {health?.is_stale ? <span className="status error">{l("Воркер застыл", "Worker is stale")}</span> : null}
             </div>
             <div className="domain-summary-line">
-              <span>{l("Последняя проверка", "Last check")}: {formatPreciseDate(domain.last_check_at, language)}</span>
+              <span>{l("Последняя проверка", "Last check")}: {formatDate(domain.last_check_at)}</span>
               <span>{l("Сейчас применяется", "Applied now")}: {formatSeconds(interval.seconds, language, interval.approximate)}</span>
               <span>{l("Подтверждения", "Confirmations")}: {domain.available_confirmations}/{domain.confirmation_threshold}</span>
             </div>
@@ -1108,7 +1185,7 @@ export default function App() {
           </div>
           <div>
             <span>{l("Последний heartbeat", "Last heartbeat")}</span>
-            <strong>{formatPreciseDate(domain.worker_heartbeat_at, language)}</strong>
+            <strong>{formatDate(domain.worker_heartbeat_at)}</strong>
           </div>
           <div>
             <span>{l("Последний владелец", "Last owner")}</span>
@@ -1116,11 +1193,11 @@ export default function App() {
           </div>
           <div>
             <span>{l("Подтвержден как доступный", "Confirmed available at")}</span>
-            <strong>{formatPreciseDate(domain.available_at, language)}</strong>
+            <strong>{formatDate(domain.available_at)}</strong>
           </div>
           <div>
             <span>{l("Последняя смена владельца", "Last owner change")}</span>
-            <strong>{formatPreciseDate(domain.last_owner_change_at, language)}</strong>
+            <strong>{formatDate(domain.last_owner_change_at)}</strong>
           </div>
         </div>
 
@@ -1419,7 +1496,7 @@ export default function App() {
               {hasChanges ? <span className="status checking">{l("Есть черновик", "Unsaved draft")}</span> : null}
             </div>
             <div className="domain-summary-line">
-              <span>{l("Последняя проверка", "Last check")}: {formatPreciseDate(domain.last_check_at, language)}</span>
+              <span>{l("Последняя проверка", "Last check")}: {formatDate(domain.last_check_at)}</span>
               <span>{l("Сейчас", "Now")}: {runtimeModeLabel(domain.check_mode, language)}</span>
               <span>{l("Сейчас применяется", "Applied now")}: {formatSeconds(interval.seconds, language, interval.approximate)}</span>
               {!observationOnly ? (
@@ -1472,11 +1549,11 @@ export default function App() {
           </div>
           <div>
             <span>{l("Подтвержден как доступный", "Confirmed available at")}</span>
-            <strong>{formatPreciseDate(domain.available_at, language)}</strong>
+            <strong>{formatDate(domain.available_at)}</strong>
           </div>
           <div>
             <span>{l("Последняя смена владельца", "Last owner change")}</span>
-            <strong>{formatPreciseDate(domain.last_owner_change_at, language)}</strong>
+            <strong>{formatDate(domain.last_owner_change_at)}</strong>
           </div>
         </div>
 
@@ -1627,12 +1704,12 @@ export default function App() {
       <div className="auth-shell">
         <div className="auth-panel intro">
           <div>
-            <p className="eyebrow">Real-Time .fr Monitoring</p>
-            <h1>FR Domain Drop Monitor</h1>
+            <p className="eyebrow">Real-Time Domain Monitoring</p>
+            <h1>Domain Drop Monitor</h1>
             <p className="subtitle">
               {l(
-                "Мониторинг .fr доменов с окнами дропа, отслеживанием смены владельца, личными Telegram-уведомлениями и админкой доступа.",
-                "Multi-user .fr monitoring with drop windows, owner-change tracking, personal Telegram alerts, and access admin tools.",
+                "Мониторинг доменных зон с окнами дропа, отслеживанием смены владельца, личными Telegram-уведомлениями и админкой доступа.",
+                "Multi-user domain monitoring with drop windows, owner-change tracking, personal Telegram alerts, and access admin tools.",
               )}
             </p>
           </div>
@@ -1709,6 +1786,61 @@ export default function App() {
     );
   }
 
+  function renderPagination(
+    label: string,
+    total: number,
+    pageData: { currentPage: number; totalPages: number },
+    state: PageState,
+    setState: Dispatch<SetStateAction<PageState>>,
+  ) {
+    if (total <= state.pageSize && state.pageSize === PAGE_SIZE_OPTIONS[0]) {
+      return null;
+    }
+    return (
+      <div className="pagination">
+        <span className="muted">
+          {label}: {total}
+        </span>
+        <div className="pagination-controls">
+          <button
+            type="button"
+            className="ghost"
+            disabled={pageData.currentPage <= 1}
+            onClick={() => setState((current) => ({ ...current, page: Math.max(1, current.page - 1) }))}
+          >
+            {l("Назад", "Prev")}
+          </button>
+          <span className="muted">
+            {pageData.currentPage} / {pageData.totalPages}
+          </span>
+          <button
+            type="button"
+            className="ghost"
+            disabled={pageData.currentPage >= pageData.totalPages}
+            onClick={() => setState((current) => ({ ...current, page: current.page + 1 }))}
+          >
+            {l("Дальше", "Next")}
+          </button>
+          <select
+            value={state.pageSize}
+            onChange={(event) =>
+              setState({
+                page: 1,
+                pageSize: Number(event.target.value),
+              })
+            }
+          >
+            {PAGE_SIZE_OPTIONS.map((size) => (
+              <option key={size} value={size}>
+                {size} / {l("стр.", "page")}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+    );
+  }
+
   function renderDashboard() {
     return (
       <>
@@ -1749,8 +1881,10 @@ export default function App() {
               ))}
             </div>
 
+            {renderPagination(l("Домены", "Domains"), filteredDomains.length, pagedDomains, domainPage, setDomainPage)}
+
             <div className="domain-list">
-              {filteredDomains.map((domain) => renderCompactDomainCard(domain))}
+              {pagedDomains.items.map((domain) => renderCompactDomainCard(domain))}
               {!filteredDomains.length ? (
                 <div className="empty-block">
                   {l("Для выбранной вкладки доменов пока нет.", "There are no domains in the selected tab yet.")}
@@ -1768,7 +1902,7 @@ export default function App() {
                 {renderField(
                   "Домен",
                   "Domain",
-                  <input placeholder="example.fr" value={singleDomain} disabled={!canUseFeatures} onChange={(event) => setSingleDomain(event.target.value)} />,
+                  <input placeholder="example.com" value={singleDomain} disabled={!canUseFeatures} onChange={(event) => setSingleDomain(event.target.value)} />,
                 )}
                 <button type="submit" disabled={!canUseFeatures}>
                   {l("Добавить домен", "Add domain")}
@@ -1784,7 +1918,7 @@ export default function App() {
                   "Domain list",
                   <textarea
                     rows={6}
-                    placeholder={"example.fr\nanother.fr"}
+                    placeholder={"example.com\nanother.net"}
                     value={bulkDomains}
                     disabled={!canUseFeatures}
                     onChange={(event) => setBulkDomains(event.target.value)}
@@ -1835,8 +1969,10 @@ export default function App() {
               </button>
             </form>
 
+            {renderPagination(l("Прокси", "Proxies"), proxies.length, pagedProxies, proxyPage, setProxyPage)}
+
             <div className="proxy-list">
-              {proxies.map((proxy) => (
+              {pagedProxies.items.map((proxy) => (
                 <article key={proxy.id} className="proxy-row">
                   <div>
                     <strong>{proxy.display_url}</strong>
@@ -1865,12 +2001,13 @@ export default function App() {
                 </span>
               </div>
             </div>
+            {renderPagination(l("События", "Events"), logs.length, pagedLogs, logPage, setLogPage)}
             <div className="log-list">
-              {logs.map((entry) => (
+              {pagedLogs.items.map((entry) => (
                 <article key={entry.id} className="log-row">
                   <span className={STATUS_CLASS[entry.event_type] ?? "status"}>{statusLabel(entry.event_type, language)}</span>
                   <div>
-                    <strong>{formatPreciseDate(entry.created_at, language)}</strong>
+                    <strong>{formatDate(entry.created_at)}</strong>
                     <p>{entry.message}</p>
                   </div>
                 </article>
@@ -1904,7 +2041,7 @@ export default function App() {
               </div>
               <div>
                 <span>{l("Доступ до", "Access until")}</span>
-                <strong>{formatPreciseDate(session?.user.access_expires_at ?? null, language)}</strong>
+                <strong>{formatDate(session?.user.access_expires_at ?? null)}</strong>
               </div>
               <div>
                 <span>{l("Осталось", "Remaining")}</span>
@@ -1925,6 +2062,26 @@ export default function App() {
             <form className="form inline" onSubmit={submitPromo}>
               <input placeholder={l("Введите промокод", "Enter promo code")} value={promoInput} onChange={(event) => setPromoInput(event.target.value)} />
               <button type="submit">{l("Активировать", "Apply")}</button>
+            </form>
+          </div>
+
+          <div className="card">
+            <h2>{l("Время и язык", "Time and language")}</h2>
+            <form className="form" onSubmit={saveProfileSettings}>
+              {renderField(
+                "Часовой пояс",
+                "Timezone",
+                <select value={selectedTimezone} onChange={(event) => setSelectedTimezone(event.target.value)}>
+                  {timezoneOptions.map((timeZone) => (
+                    <option key={timeZone} value={timeZone}>
+                      {timeZone}
+                    </option>
+                  ))}
+                </select>,
+                "Влияет только на отображение времени в панели. Проверки на сервере остаются в UTC и настройках домена.",
+                "Only changes how time is displayed in the dashboard. Server checks keep using UTC and domain settings.",
+              )}
+              <button type="submit">{l("Сохранить настройки", "Save settings")}</button>
             </form>
           </div>
 
@@ -1990,7 +2147,7 @@ export default function App() {
               </div>
               <div>
                 <span>{l("Последняя синхронизация", "Last sync")}</span>
-                <strong>{formatPreciseDate(monitoringHealth?.checked_at ?? null, language)}</strong>
+                <strong>{formatDate(monitoringHealth?.checked_at ?? null)}</strong>
               </div>
               <div>
                 <span>{l("Доступных доменов", "Available domains")}</span>
@@ -2110,7 +2267,7 @@ export default function App() {
                         </span>
                       </p>
                     </div>
-                    <div className="muted">{formatPreciseDate(user.access_expires_at, language)}</div>
+                    <div className="muted">{formatDate(user.access_expires_at)}</div>
                   </div>
 
                   <div className="form two-columns compact-grid">
@@ -2188,7 +2345,7 @@ export default function App() {
                     {code.max_activations ? ` / ${code.max_activations}` : " / ∞"}
                   </p>
                   <p>
-                    {l("Истекает", "Expires")}: {formatPreciseDate(code.expires_at, language)}
+                    {l("Истекает", "Expires")}: {formatDate(code.expires_at)}
                   </p>
                 </article>
               ))}
@@ -2202,7 +2359,7 @@ export default function App() {
                 <article key={entry.id} className="log-row">
                   <span className="status info">{entry.action}</span>
                   <div>
-                    <strong>{formatPreciseDate(entry.created_at, language)}</strong>
+                    <strong>{formatDate(entry.created_at)}</strong>
                     <p>
                       actor={entry.actor_user_id ?? "-"} target={entry.target_user_id ?? "-"}
                       {entry.details ? ` | ${entry.details}` : ""}
@@ -2229,12 +2386,12 @@ export default function App() {
     <div className="app-shell">
       <header className="hero hero-top">
         <div>
-          <p className="eyebrow">Real-Time .fr Monitoring</p>
-          <h1>FR Domain Drop Monitor</h1>
+          <p className="eyebrow">Real-Time Domain Monitoring</p>
+          <h1>Domain Drop Monitor</h1>
           <p className="subtitle">
             {l(
-              "Изолированные аккаунты, watchdog для доменов, точное время освобождения и смены владельца, личные Telegram-боты и явные режимы мониторинга.",
-              "Isolated accounts, worker watchdogs, exact release and owner-change timing, personal Telegram bots, and explicit monitoring modes.",
+              "Проверка доменов по RDAP/DNS, режимы по окну или постоянному интервалу, Telegram-уведомления и понятная история событий.",
+              "RDAP/DNS domain checks, drop-window or continuous monitoring, Telegram alerts, and a clear event history.",
             )}
           </p>
           <div className="hero-meta">

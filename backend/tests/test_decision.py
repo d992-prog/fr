@@ -8,6 +8,7 @@ def make_domain(**overrides):
     base = {
         "status": "checking",
         "manual_burst": False,
+        "available_recheck_enabled": False,
         "available_confirmations": 0,
     }
     base.update(overrides)
@@ -23,7 +24,7 @@ def test_decision_enters_burst_on_first_possible_drop():
     )
 
     assert result.status == "checking"
-    assert result.check_mode == "burst"
+    assert result.check_mode == "normal"
     assert result.confirmations == 1
 
 
@@ -36,6 +37,7 @@ def test_decision_confirms_availability_after_threshold():
     )
 
     assert result.status == "available"
+    assert result.check_mode == "available-stop"
     assert result.should_alert is True
 
 
@@ -49,3 +51,16 @@ def test_decision_respects_manual_burst_when_domain_is_registered():
 
     assert result.status == "checking"
     assert result.check_mode == "burst"
+
+
+def test_decision_marks_available_domain_as_captured_when_registered_again():
+    result = evaluate_domain(
+        make_domain(status="available", available_confirmations=3),
+        dns_signal=DnsSignal.EXISTS,
+        rdap_signal=RdapSignal.FOUND,
+        confirmation_threshold=3,
+    )
+
+    assert result.status == "captured"
+    assert result.check_mode == "captured"
+    assert result.should_log is True
